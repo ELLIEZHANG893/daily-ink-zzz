@@ -1,10 +1,11 @@
-# 打包 Mac 版 Daily Ink 并发布到 GitHub Releases
-# 触发方式：推送 v 开头的标签（如 v0.2.0），或在 Actions 页面手动运行
+# 打包 Mac 版 Daily Ink
+# - 在 GitHub 上「发布一个 Release」时：自动打包并把 .dmg 上传到这个 Release
+# - 在 Actions 页面手动运行：只打包，安装包在本次运行页面下载
 name: 打包 Mac 版
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -24,18 +25,23 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 版本号跟随 Release 标签（如 v0.2.0 → 0.2.0）
+        if: github.event_name == 'release'
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
       - name: 打包 .dmg（Apple 芯片 + Intel）
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            npx electron-builder --mac --publish always
-          else
-            npx electron-builder --mac --publish never
-          fi
+        run: npx electron-builder --mac --publish never
 
-      - name: 上传安装包（手动运行时可在本次运行页面下载）
+      - name: 上传到 Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+
+      - name: 上传安装包（手动运行时在本次运行页面下载）
+        if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: DailyInk-mac
