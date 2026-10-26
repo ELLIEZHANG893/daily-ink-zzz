@@ -125,8 +125,19 @@
 
   async function render() { await drawCard(tab); save(); }
 
+  const TITLES = {
+    fortune: ["运势签", "按八字和当天干支生成你自己的每日运势"],
+    daily: ["每日一句", "小黑猫墨墨每天说一句不一样的话"],
+    calendar: ["月历", "整月日历，附农历、干支和节气"],
+    todo: ["待办", "把今天要做的事挂在桌上"],
+    status: ["状态牌", "一键切换「专注中」「开会中」"],
+    quote: ["文字卡片", "写一句想对自己说的话"],
+    image: ["照片", "把照片变成墨水屏点阵，也可以多图轮播"],
+  };
   function setTab(name, silent) {
     tab = name;
+    const t = TITLES[name] || ["", ""];
+    $("pageTitle").textContent = t[0]; $("pageSub").textContent = t[1];
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     document.querySelectorAll(".form").forEach((f) => f.classList.toggle("active", f.dataset.form === name));
     if (!silent) render();
@@ -187,6 +198,10 @@
       if (ink.battery) sub += ` · 电池 ${(ink.battery / 1000).toFixed(2)}V`;
     } else if (ink.device) sub = "已断开，点击「重新连接」";
     $("connSub").textContent = sub;
+    $("statDevice").textContent = on ? ink.device.name : "未连接";
+    $("statDeviceSub").textContent = on ? (d ? d.name : "已连接") : (ink.device ? "已断开，可在下方重新连接" : "在下方「设备」里点连接");
+    $("statBattery").textContent = on && ink.battery ? `${(ink.battery / 1000).toFixed(2)} V` : "—";
+    $("statBatterySub").textContent = on ? (ink.slotCount ? `${ink.slotCount} 个图片槽位` : "无图片槽位") : "连接后显示";
     $("btnConnect").textContent = on ? "已连接" : ink.device ? "重新连接" : "连接";
     $("btnConnect").disabled = on || busy || !navigator.bluetooth;
     ["btnCalendar", "btnClear", "btnDisconnect", "btnSend", "btnStopSlide"].forEach((id) => ($(id).disabled = !on || busy));
@@ -198,16 +213,74 @@
     busy = true; refreshConn();
     try { await fn(); if (okMsg) log(okMsg); return true; }
     catch (e) {
-      if (e && e.name === "NotFoundError") log("没有找到或没有选择设备");
-      else { log("出错：" + (e && e.message || e)); if (!autoRunning) alert(e && e.message || String(e)); }
+      if (e && e.name === "BluetoothOff") log("蓝牙不可用");
+      else if (e && e.name === "NotFoundError") {
+        log("没有找到或没有选择设备");
+        // 桌面版：扫描超时会自己给出原因；如果连扫描都没开始，说明蓝牙没权限或没打开
+        if (desktop && !$("scanBox").classList.contains("bad")) showScan("bad", NO_PERMISSION);
+        if (!desktop) hideScan();
+      }
+      else {
+        log("出错：" + (e && e.message || e));
+        $("logBox").open = true;
+        if (!autoRunning) showScan("bad", `<b>出错了</b><div>${String(e && e.message || e).replace(/</g, "&lt;")}</div><div class="hint">详细信息见右侧「运行日志」</div>`);
+      }
       return false;
     } finally { busy = false; refreshConn(); }
   }
 
   async function ensureConnected() {
     if (ink.connected) return;
-    if (ink.device) { try { await ink.reconnect(); return; } catch (e) { log("重连失败，重新搜索设备…"); } }
-    await ink.connect();
+    if (ink.device) { try { await ink.reconnect(); hideScan(); return; } catch (e) { log("重连失败，重新搜索设备…"); } }
+    // 先确认蓝牙可用：Mac 蓝牙关着，或者 App 没有蓝牙权限时，这里会是 false
+    let available = true;
+    try { available = await Promise.race([navigator.bluetooth.getAvailability(), sleep(1500).then(() => true)]); } catch (e) {}
+    if (!available) {
+      showScan("bad", desktop ? BT_OFF_DESKTOP : BT_OFF_WEB);
+      const err = new Error("蓝牙不可用"); err.name = "BluetoothOff"; throw err;
+    }
+    if (!desktop) showScan("", '<span class="spin"></span>请在浏览器弹窗里选择 <b>NRF_EPD_</b> 开头的设备');
+    try {
+      await ink.connect("NRF_EPD_", { scanAll: !!desktop });
+      showScan("good", `✅ 已连接 ${ink.device.name}`);
+      setTimeout(hideScan, 4000);
+    } catch (e) {
+      if (!desktop) hideScan();
+      throw e;
+    }
+  }
+
+  // ---------- 扫描提示 ----------
+  function showScan(kind, html) { const b = $("scanBox"); b.className = "scan show " + (kind || ""); b.innerHTML = html; }
+  function hideScan() { $("scanBox").className = "scan"; }
+  const NO_PERMISSION = `<b>没有扫描到任何蓝牙设备</b>
+    <div>多半是 Daily Ink 还没有蓝牙权限：</div>
+    <ol><li>打开「系统设置 → 隐私与安全性 → 蓝牙」</li><li>找到 <b>Daily Ink</b> 并打开开关（列表里没有就点「+」添加「应用程序」里的 Daily Ink）</li><li>完全退出 Daily Ink（菜单栏小黑猫 → 退出），再重新打开</li></ol>
+    <div>也请确认 Mac 的蓝牙是打开的。</div>`;
+  const BT_OFF_DESKTOP = `<b>蓝牙不可用</b>
+    <ol><li>确认 Mac 的蓝牙已打开（屏幕右上角控制中心 → 蓝牙）</li><li>打开「系统设置 → 隐私与安全性 → 蓝牙」，把 <b>Daily Ink</b> 的开关打开（没有就点「+」添加）</li><li>完全退出 Daily Ink（菜单栏小黑猫 → 退出），再重新打开</li></ol>`;
+  const BT_OFF_WEB = `<b>蓝牙不可用</b><div>请确认电脑的蓝牙已打开，并允许浏览器使用蓝牙。</div>`;
+  const NO_SCREEN = (n) => `<b>扫描到 ${n} 个蓝牙设备，但没有找到墨水屏</b>
+    <ol><li>屏幕可能正被别的设备连着（手机、网页、终端脚本），先断开它们</li><li>屏幕离电脑太远，或者没电了</li><li>按一下屏幕背面的按钮唤醒它，再点连接</li></ol>`;
+
+  if (desktop && desktop.onScan) {
+    let lastTotal = 0;
+    desktop.onScan((m) => {
+      if (m.phase === "start") { lastTotal = 0; showScan("", '<span class="spin"></span>正在扫描附近的蓝牙设备…'); log("开始扫描蓝牙设备"); }
+      else if (m.phase === "update") {
+        lastTotal = m.total;
+        const names = m.named.map((d) => d.name).filter(Boolean);
+        const others = names.length ? `已发现：${names.slice(0, 6).join("、")}${names.length > 6 ? " 等" : ""}` : "";
+        showScan("", `<span class="spin"></span>正在寻找墨水屏…已扫描到 ${m.total} 个设备<div class="hint">${others}</div>
+          ${m.named.length ? '<div class="hint">如果你的屏幕名字不是 NRF_EPD_ 开头，点它手动连接：</div><div class="devlist">' +
+            m.named.slice(0, 12).map((d) => `<button class="chip" data-dev="${d.id}">${d.name.replace(/</g, "&lt;")}</button>`).join("") + "</div>" : ""}`);
+        $("scanBox").querySelectorAll("[data-dev]").forEach((b) => (b.onclick = () => desktop.chooseDevice(b.dataset.dev)));
+      } else if (m.phase === "picked") { log(`找到墨水屏：${m.name}，正在连接…`); showScan("", `<span class="spin"></span>找到 <b>${m.name}</b>，正在连接…`); }
+      else if (m.phase === "timeout") {
+        log(m.total ? `扫描到 ${m.total} 个设备，但没有墨水屏` : "没有扫描到任何蓝牙设备（可能缺少蓝牙权限）");
+        showScan("bad", m.total ? NO_SCREEN(m.total) : NO_PERMISSION);
+      }
+    });
   }
 
   async function sendCurrent() {
@@ -275,6 +348,10 @@
       const s = store().lastRun;
       const plan = $("aEnable").checked ? `已开启：每天 ${$("aTime").value} 发送「${$("aCard").selectedOptions[0].text}」。` : "未开启。";
       $("aStatus").textContent = plan + (s ? ` 上次运行：${s.at}，${s.ok ? "成功" : "失败（" + s.err + "）"}` : "");
+      $("statAuto").textContent = $("aEnable").checked ? `每天 ${$("aTime").value}` : "未开启";
+      $("statAutoSub").textContent = $("aEnable").checked
+        ? `发送「${$("aCard").selectedOptions[0].text}」` + (s ? ` · 上次${s.ok ? "成功" : "失败"}` : "")
+        : "在右侧「每日自动更新」里开启";
     }
 
     /** 由桌面 App 在设定时间调用（带用户手势，可以自动连接蓝牙） */

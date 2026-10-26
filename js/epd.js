@@ -80,9 +80,13 @@
     get connected() { return !!(this.device && this.device.gatt.connected && this.char); }
     get info() { return DRIVERS[this.driver] || null; }
 
-    async connect(prefix = "NRF_EPD_") {
+    async connect(prefix = "NRF_EPD_", opts = {}) {
       if (!navigator.bluetooth) throw new Error("这个浏览器不支持网页蓝牙。电脑/安卓请用 Chrome 或 Edge，iPhone 请用 Bluefy 浏览器。");
-      this.device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: prefix }], optionalServices: [SERVICE] });
+      // 桌面版扫描所有设备，由 App 自动挑出墨水屏，方便判断「没权限」还是「没找到屏」
+      const req = opts.scanAll
+        ? { acceptAllDevices: true, optionalServices: [SERVICE] }
+        : { filters: [{ namePrefix: prefix }], optionalServices: [SERVICE] };
+      this.device = await navigator.bluetooth.requestDevice(req);
       this.device.addEventListener("gattserverdisconnected", () => { this.char = null; this.log("连接已断开"); this.onchange && this.onchange(); });
       await this._open();
     }

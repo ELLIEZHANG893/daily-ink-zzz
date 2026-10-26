@@ -7,4 +7,7 @@ contextBridge.exposeInMainWorld("dailyInkDesktop", {
   readNote: (name) => ipcRenderer.invoke("notes:read", name),
   notify: (title, body) => ipcRenderer.invoke("notify", title, body),
   ready: () => ipcRenderer.invoke("ready"),
+  onScan: (cb) => ipcRenderer.on("bt:scan", (_e, data) => cb(data)),
+  chooseDevice: (id) => ipcRenderer.invoke("bt:choose", id),
+  cancelScan: () => ipcRenderer.invoke("bt:cancel"),
 });

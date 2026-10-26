@@ -25,6 +25,10 @@ function writeSettings(patch) {
   return s;
 }
 
+// 确保网页蓝牙可用（部分平台默认未开启）
+app.commandLine.appendSwitch("enable-experimental-web-platform-features");
+app.commandLine.appendSwitch("enable-web-bluetooth");
+
 // ---------- 只允许运行一个 ----------
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on("second-instance", () => showWindow());
@@ -58,23 +62,40 @@ function createWindow(hidden) {
     if (process.platform === "darwin" && app.dock) app.dock.hide();
   });
 
-  // 自动选择蓝牙设备：优先上次连过的那块屏，否则选第一个 NRF_EPD_ 开头的
-  let pick = null;
+  // 自动选择蓝牙设备：优先上次连过的那块屏，否则选第一个 NRF_EPD_ 开头的。
+  // 扫描过程实时告诉页面（扫到了几个设备、有没有墨水屏），扫不到时页面会提示原因。
   win.webContents.on("select-bluetooth-device", (event, devices, callback) => {
     event.preventDefault();
     if (!pick) {
-      pick = { callback, timer: setTimeout(() => { if (pick) { pick.callback(""); pick = null; } }, 20000) };
+      pick = { callback, seen: new Map(), started: Date.now(), timer: setTimeout(() => finishPick(""), 25000) };
+      sendToPage("bt:scan", { phase: "start" });
     } else pick.callback = callback;
+    devices.forEach((d) => pick.seen.set(d.deviceId, d.deviceName || ""));
+    const list = [...pick.seen].map(([id, name]) => ({ id, name }));
+    sendToPage("bt:scan", { phase: "update", total: list.length, named: list.filter((d) => d.name) });
     const last = readSettings().deviceName;
     const match = devices.find((d) => last && d.deviceName === last) || devices.find((d) => (d.deviceName || "").startsWith(PREFIX));
-    if (match) {
-      clearTimeout(pick.timer);
-      writeSettings({ deviceName: match.deviceName });
-      const cb = pick.callback; pick = null;
-      cb(match.deviceId);
-    }
+    if (match) finishPick(match.deviceId, match.deviceName);
   });
 }
+
+let pick = null;
+function sendToPage(ch, data) { try { win && win.webContents.send(ch, data); } catch (e) {} }
+function finishPick(id, name) {
+  if (!pick) return;
+  clearTimeout(pick.timer);
+  const p = pick; pick = null;
+  if (id && name) writeSettings({ deviceName: name });
+  sendToPage("bt:scan", { phase: id ? "picked" : "timeout", name: name || "", total: p.seen.size });
+  p.callback(id || "");
+}
+// 页面里手动点选某个设备（自动匹配不到时的备用方案）
+ipcMain.handle("bt:choose", (_e, id) => {
+  if (!pick) return false;
+  finishPick(id, pick.seen.get(id) || "");
+  return true;
+});
+ipcMain.handle("bt:cancel", () => { finishPick(""); return true; });
 
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, "trayTemplate.png"));
