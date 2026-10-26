@@ -51,17 +51,34 @@
   }
 
   /** 排出八字，并用简化法判断日主强弱与喜用五行 */
+  /** 解析手动输入的四柱，如「甲子 丙寅 戊辰 庚申」；时柱不知道可以只填三柱 */
+  function parsePillars(text) {
+    const chars = String(text).replace(/[^甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥]/g, "");
+    if (chars.length !== 6 && chars.length !== 8) throw new Error("请填 3 柱或 4 柱干支，例如：甲子 丙寅 戊辰 庚申");
+    const pillars = [];
+    for (let i = 0; i < chars.length; i += 2) {
+      const s = chars[i], b = chars[i + 1];
+      if (!STEMS.includes(s) || !BR.includes(b)) throw new Error(`「${s}${b}」不是有效的干支，天干在前、地支在后`);
+      if (STEMS.indexOf(s) % 2 !== BR.indexOf(b) % 2) throw new Error(`「${s}${b}」不是有效的六十甲子组合，请检查`);
+      pillars.push(s + b);
+    }
+    return pillars;
+  }
+
   function natal(birth) {
-    const S = root.Solar;
-    const ec = S.fromYmdHms(birth.y, birth.m, birth.d, birth.h, birth.mi, 0).getLunar().getEightChar();
-    const pillars = [ec.getYear(), ec.getMonth(), ec.getDay(), ec.getTime()];
+    let pillars;
+    if (birth.pillars) pillars = Array.isArray(birth.pillars) ? birth.pillars : parsePillars(birth.pillars);
+    else {
+      const ec = root.Solar.fromYmdHms(birth.y, birth.m, birth.d, birth.h, birth.mi, 0).getLunar().getEightChar();
+      pillars = [ec.getYear(), ec.getMonth(), ec.getDay(), ec.getTime()];
+    }
     const dm = pillars[2][0];
     const dmWx = wxOfStem(dm);
     const resource = Object.keys(GEN).find((k) => GEN[k] === dmWx);
     const chars = [];
     pillars.forEach((p, i) => { if (i !== 2) chars.push(wxOfStem(p[0])); chars.push(wxOfBr(p[1])); });
-    const support = chars.filter((w) => w === dmWx || w === resource).length; // 7 个字里帮身的数量
-    const weak = support < 4;
+    const support = chars.filter((w) => w === dmWx || w === resource).length; // 除日主外，帮身的字数
+    const weak = support < chars.length / 2;
     const favorable = weak ? [resource, dmWx] : [GEN[dmWx], CTRL[dmWx], Object.keys(CTRL).find((k) => CTRL[k] === dmWx)];
     return { pillars, dm, dmWx, weak, favorable, branches: pillars.map((p) => p[1]) };
   }
@@ -95,7 +112,7 @@
     };
   }
 
-  const api = { reading, natal, tenGod };
+  const api = { reading, natal, tenGod, parsePillars };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Fortune = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

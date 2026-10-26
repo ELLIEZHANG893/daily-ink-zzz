@@ -172,6 +172,51 @@
       await this.write(CMD.REFRESH);
     }
 
+    /** 只把图片存进指定槽位，不刷新屏幕（用于多图轮播） */
+    async _storeOnly(imageData, slot, onProgress, base, span) {
+      const d = this.info;
+      const { black, red } = encodePlanes(imageData);
+      await this.write(CMD.SET_SLOT, Uint8Array.of(0, slot));
+      await this.write(CMD.INIT); await sleep(200);
+      if (d.mode === "BWR") {
+        await this._writePlane(black, "bw", onProgress, base, span / 2);
+        await this._writePlane(red, "red", onProgress, base + span / 2, span / 2);
+      } else {
+        await this._writePlane(black, "bw", onProgress, base, span);
+      }
+      await sleep(300);
+      await this.write(CMD.REFRESH, Uint8Array.of(0xa5)); // 0xA5 = 只保存不刷新
+      await sleep(800);
+    }
+
+    /**
+     * 多图轮播：第 1 张存进槽位 1 并立即显示，其余存进后面的槽位，
+     * 然后让屏幕每隔 minutes 分钟自己翻到下一张（不需要电脑在线）。
+     */
+    async slideshow(images, minutes, onProgress) {
+      if (!this.info) throw new Error("暂不支持这块屏的驱动。");
+      if (!this.slotCount) throw new Error("这块屏的固件没有图片槽位，不支持多图轮播。");
+      const n = Math.min(images.length, this.slotCount);
+      if (n < 2) throw new Error("轮播至少需要 2 张图片。");
+      const per = 100 / n;
+      this.slot = 0;
+      await this.sendImage(images[0], (p) => onProgress && onProgress(p * per / 100));
+      this.log("第 1 张已显示，等屏幕刷新完再存后面的图…");
+      await sleep(20000);
+      for (let i = 1; i < n; i++) {
+        await this._storeOnly(images[i], i, onProgress, per * i, per);
+        this.log(`第 ${i + 1} 张已存入槽位 ${i + 1}`);
+      }
+      const m = Math.max(1, Math.min(65535, Math.round(minutes)));
+      await this.write(CMD.SET_SLIDE, Uint8Array.of(m >> 8 & 255, m & 255));
+      this.log(`已开启轮播：${n} 张图，每 ${m} 分钟换一张`);
+    }
+
+    /** 停止轮播：把间隔调到最长（约 45 天），并重新显示槽位 1 */
+    async stopSlideshow() {
+      await this.write(CMD.SET_SLIDE, Uint8Array.of(0xff, 0xff));
+    }
+
     async calendarMode() { await this._setTime(1); }
     async _setTime(mode) {
       const t = Math.floor(Date.now() / 1000);

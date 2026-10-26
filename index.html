@@ -89,6 +89,15 @@
   footer { margin-top: 30px; text-align: center; color: var(--muted); font-size: 13px; }
   footer a { color: var(--ink); }
   .sig { font: 700 14px "Noto Serif SC", serif; color: var(--ink); }
+  .seg { display: flex; gap: 16px; flex-wrap: wrap; }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .thumbs img { width: 64px; height: 48px; object-fit: cover; border-radius: 6px; border: 2px solid transparent; cursor: pointer; }
+  .thumbs img.active { border-color: var(--seal); }
+  .slide-box { border-top: 1px dashed var(--line); padding-top: 12px; display: grid; gap: 8px; }
+  .badge { font: 500 11px sans-serif; background: var(--seal-soft); color: #7a2214; padding: 2px 6px; border-radius: 99px; vertical-align: 2px; }
+  .desktop-only { display: none !important; }
+  body.desktop .desktop-only { display: flex !important; }
+  body.desktop .auto-box.desktop-only { display: grid !important; gap: 10px; }
   .warn { background: var(--seal-soft); color: #7a2214; border-radius: 10px; padding: 10px 12px; font-size: 13px; display: none; }
 </style>
 </head>
@@ -121,22 +130,60 @@
       <h2 style="margin-top:22px"><span class="step">2</span>选择卡片</h2>
       <div class="tabs">
         <button class="tab active" data-tab="fortune">运势签</button>
+        <button class="tab" data-tab="daily">每日一句</button>
+        <button class="tab" data-tab="calendar">月历</button>
+        <button class="tab" data-tab="todo">待办</button>
         <button class="tab" data-tab="status">状态牌</button>
         <button class="tab" data-tab="quote">文字卡片</button>
         <button class="tab" data-tab="image">照片</button>
       </div>
 
       <div class="form active" data-form="fortune">
-        <div class="two">
+        <div class="seg" role="radiogroup">
+          <label class="check"><input type="radio" name="fMode" value="birth" checked>按出生时间排盘</label>
+          <label class="check"><input type="radio" name="fMode" value="pillars">直接填八字</label>
+        </div>
+        <div class="two" id="fBirthBox">
           <label>出生日期（公历）<input type="date" id="fBirthDate"></label>
           <label>出生时间<input type="time" id="fBirthTime"></label>
         </div>
+        <label id="fPillarsBox" style="display:none">四柱八字（年 月 日 时，不知道时柱可只填前三柱）<input type="text" id="fPillars" placeholder="例如：甲子 丙寅 戊辰 庚申"></label>
         <div class="two">
           <label>称呼（可不填）<input type="text" id="fName" maxlength="6" placeholder="例如：小墨"></label>
           <label>看哪一天<input type="date" id="fDay"></label>
         </div>
         <p class="hint" id="fNatal"></p>
-        <p class="hint">按八字日主与当天干支推算，仅供娱乐参考。生辰只在你的浏览器里计算，不会上传。</p>
+        <p class="hint">按八字日主与当天干支推算，仅供娱乐参考。生辰只在你的电脑里计算，不会上传。</p>
+      </div>
+
+      <div class="form" data-form="daily">
+        <div class="two">
+          <label>日期<input type="date" id="dDay"></label>
+          <label>&nbsp;<button id="dShuffle" type="button">换一句</button></label>
+        </div>
+        <label>自己写一句（留空就用墨墨的每日一句）<textarea id="dText" rows="2" maxlength="40" placeholder=""></textarea></label>
+        <p class="hint">墨墨是 Daily Ink 的原创小黑猫，每天会说一句不一样的话。</p>
+      </div>
+
+      <div class="form" data-form="calendar">
+        <div class="two">
+          <label>日期<input type="date" id="cDay"></label>
+          <label>每周从哪天开始<select id="cWeekStart"><option value="1">周一</option><option value="0">周日</option></select></label>
+        </div>
+        <p class="hint">也可以点上方「日历模式」，让屏幕自己显示内置日历，并每天自动翻页。</p>
+      </div>
+
+      <div class="form" data-form="todo">
+        <label>标题<input type="text" id="tTitle" maxlength="10" value="今日待办"></label>
+        <label>待办事项（每行一件，开头写 [x] 表示已完成）<textarea id="tText" rows="6">[x] 晨跑 20 分钟
+回复工作邮件
+准备周会材料
+给妈妈打个电话
+早点睡觉</textarea></label>
+        <div class="desktop-only row" style="align-items:flex-end">
+          <label style="flex:1">从 Mac「备忘录」读取（填笔记标题）<input type="text" id="tNoteName" placeholder="例如：今日待办"></label>
+          <button id="tFromNotes" type="button">读取</button>
+        </div>
       </div>
 
       <div class="form" data-form="status">
@@ -158,12 +205,23 @@
       </div>
 
       <div class="form" data-form="image">
-        <label>选择图片<input type="file" id="iFile" accept="image/*"></label>
+        <label>选择图片（可多选，用于轮播）<input type="file" id="iFile" accept="image/*" multiple></label>
+        <div class="thumbs" id="iThumbs"></div>
         <div class="two">
           <label>缩放<input type="range" id="iZoom" min="1" max="3" step="0.05" value="1"></label>
           <label>左右 / 上下<span class="row"><input type="range" id="iDx" min="-200" max="200" value="0" style="flex:1"><input type="range" id="iDy" min="-150" max="150" value="0" style="flex:1"></span></label>
         </div>
         <label class="check"><input type="checkbox" id="iDither" checked>照片抖动（用黑白点模拟灰度，照片更好看）</label>
+        <div class="slide-box">
+          <b>多图轮播 <span class="badge">实验功能</span></b>
+          <p class="hint">把选中的多张图一次存进屏幕，屏幕会按间隔自己翻页，不需要电脑在线。需要固件支持图片槽位。</p>
+          <div class="row" style="align-items:flex-end">
+            <label style="flex:1">每隔多少分钟换一张<input type="number" id="iInterval" min="1" max="65535" value="1440"></label>
+            <button id="btnSlide" type="button" disabled>开始轮播</button>
+            <button id="btnStopSlide" type="button" disabled>停止轮播</button>
+          </div>
+          <p class="hint">1440 分钟 = 每天换一张。</p>
+        </div>
       </div>
 
       <label class="check" style="margin-top:12px"><input type="checkbox" id="useRed" checked>使用红色点缀（三色屏可见；黑白屏会自动变白）</label>
@@ -178,6 +236,22 @@
         <div class="progress"><i id="bar"></i></div>
       </div>
       <p class="hint" id="sendHint" style="margin-top:8px">发送后屏幕会闪烁十几秒，这是正常的刷新过程，期间请不要断开。</p>
+      <div class="desktop-only auto-box" id="autoBox">
+        <h2 style="margin-top:20px"><span class="step">4</span>每日自动更新</h2>
+        <label class="check"><input type="checkbox" id="aEnable">每天自动发送到墨水屏</label>
+        <div class="two">
+          <label>时间<input type="time" id="aTime" value="10:00"></label>
+          <label>发送哪种卡片<select id="aCard">
+            <option value="fortune">运势签</option>
+            <option value="daily">每日一句</option>
+            <option value="calendar">月历</option>
+            <option value="todo">待办（读取备忘录）</option>
+          </select></label>
+        </div>
+        <label class="check"><input type="checkbox" id="aLogin">开机时自动启动 Daily Ink</label>
+        <div class="row"><button id="aRunNow" type="button">现在运行一次</button></div>
+        <p class="hint" id="aStatus">卡片内容使用上面对应标签页里填好的设置。Mac 睡眠时不会运行，唤醒后会自动补发。</p>
+      </div>
       <details>
         <summary>运行日志</summary>
         <div id="log"></div>
@@ -192,8 +266,9 @@
   </footer>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/lunar-javascript@1.7.7/lunar.js"></script>
+<script src="vendor/lunar.js"></script>
 <script src="js/fortune.js"></script>
+<script src="js/momo.js"></script>
 <script src="js/epd.js"></script>
 <script src="js/cards.js"></script>
 <script src="js/app.js"></script>

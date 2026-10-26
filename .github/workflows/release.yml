@@ -1,0 +1,42 @@
+# 打包 Mac 版 Daily Ink 并发布到 GitHub Releases
+# 触发方式：推送 v 开头的标签（如 v0.2.0），或在 Actions 页面手动运行
+name: 打包 Mac 版
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 打包 .dmg（Apple 芯片 + Intel）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            npx electron-builder --mac --publish always
+          else
+            npx electron-builder --mac --publish never
+          fi
+
+      - name: 上传安装包（手动运行时可在本次运行页面下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: DailyInk-mac
+          path: dist/*.dmg

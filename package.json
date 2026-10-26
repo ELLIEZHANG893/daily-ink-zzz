@@ -1,0 +1,64 @@
+{
+  "name": "daily-ink",
+  "productName": "Daily Ink",
+  "version": "0.2.0",
+  "description": "让 4.2 寸蓝牙墨水屏每天换一张卡片 · by zzz (Ellie Zhang)",
+  "main": "desktop/main.js",
+  "author": "zzz (Ellie Zhang)",
+  "license": "GPL-3.0",
+  "homepage": "https://github.com/ELLIEZHANG893/daily-ink-zzz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ELLIEZHANG893/daily-ink-zzz.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "io.github.elliezhang893.dailyink",
+    "productName": "Daily Ink",
+    "copyright": "Copyright © 2026 zzz (Ellie Zhang)",
+    "files": [
+      "index.html",
+      "js/**",
+      "vendor/**",
+      "desktop/**",
+      "LICENSE",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "extendInfo": {
+        "NSBluetoothAlwaysUsageDescription": "Daily Ink 需要使用蓝牙连接你的墨水屏，把卡片发送过去。",
+        "NSAppleEventsUsageDescription": "Daily Ink 需要读取「备忘录」里你指定的那条笔记，用来生成待办卡片。",
+        "LSUIElement": false
+      }
+    },
+    "dmg": {
+      "title": "Daily Ink ${version}",
+      "artifactName": "DailyInk-${version}-${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ELLIEZHANG893",
+      "repo": "daily-ink-zzz",
+      "releaseType": "release"
+    }
+  }
+}
