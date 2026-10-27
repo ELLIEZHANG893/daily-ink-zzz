@@ -112,7 +112,7 @@ sudo pmset repeat wakeorpoweron MTWRFSU 09:58:00
 
 - 蓝牙通信协议参考开源项目 [EPD-nRF5](https://github.com/tsl0922/EPD-nRF5)（作者 tsl0922，GPL-3.0）。本项目的代码为独立实现。
 - 农历与干支计算使用 [lunar-javascript](https://github.com/6tail/lunar-javascript)（6tail，MIT），已随项目一起打包在 `vendor/` 目录。
-- 小黑猫「墨墨」的形象和每日一句文案均为本项目原创。
+- 小黑猫「墨墨」的形象（App 图标与三视图）和每日一句文案均为本项目原创，版权归 zzz (Ellie Zhang) 所有。
 - 桌面版基于 [Electron](https://www.electronjs.org/)。
 - 本项目是个人爱好作品，**与任何墨水屏厂商、商业固件或第三方网站均无关联**。使用本工具造成的任何问题，作者不承担责任。
 

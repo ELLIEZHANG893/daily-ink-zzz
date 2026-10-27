@@ -400,6 +400,9 @@
     setTimeout(pushSchedule, 0);
   }
 
+  // 墨墨的图片加载好后重画一次预览
+  if (window.Momo && Momo.frontImg && !Momo.frontImg.complete) Momo.frontImg.addEventListener("load", render);
+
   // ---------- 启动 ----------
   if (!navigator.bluetooth) $("unsupported").style.display = "block";
   ["fDay", "dDay", "cDay"].forEach((id) => ($(id).value = todayStr()));

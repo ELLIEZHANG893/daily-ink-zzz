@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Daily Ink · 每日一墨</title>
 <meta name="description" content="让 4.2 寸蓝牙墨水屏每天换一张卡片：运势签、每日一句、月历、待办、状态牌、照片。by zzz (Ellie Zhang)">
+<link rel="icon" href="assets/logo.png">
+<link rel="apple-touch-icon" href="assets/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@700;900&display=swap" rel="stylesheet">
@@ -32,11 +34,7 @@
     position: sticky; top: 0; height: 100vh; overflow-y: auto;
   }
   .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 22px; }
-  .brand-mark {
-    width: 34px; height: 34px; border-radius: 9px; background: var(--seal); flex: none;
-    display: grid; place-items: center;
-  }
-  .brand-mark svg { width: 24px; height: 24px; }
+  .brand-mark { width: 38px; height: 38px; border-radius: 10px; flex: none; display: block; box-shadow: 0 2px 6px rgba(214,51,43,.25); }
   .brand b { font-size: 17px; color: var(--ink); letter-spacing: -.2px; display: block; line-height: 1.1; white-space: nowrap; }
   .brand small { color: var(--muted); font-size: 12px; }
   .side-label { font-size: 12px; color: var(--muted); padding: 14px 12px 6px; font-weight: 500; }
@@ -46,6 +44,7 @@
     color: var(--text); font-weight: 500;
   }
   .nav svg { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .nav .nav-cat { width: 18px; height: 18px; object-fit: contain; flex: none; }
   .nav:hover { background: var(--soft); }
   .nav.active { background: var(--accent-soft); color: var(--accent-ink); }
   .side-foot { margin-top: auto; padding: 16px 12px 0; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
@@ -72,6 +71,12 @@
 
   .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 16px; align-items: start; }
   .stack { display: grid; gap: 16px; }
+
+  .bg-cat {
+    position: fixed; left: 260px; bottom: 0; height: min(46vh, 460px); width: auto;
+    opacity: .2; pointer-events: none; user-select: none; z-index: 0;
+  }
+  .main > * { position: relative; z-index: 1; }
 
   /* ---------- 控件 ---------- */
   .btn {
@@ -157,6 +162,7 @@
   /* ---------- 窄屏 ---------- */
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
   @media (max-width: 860px) {
+    .bg-cat { height: 30vh; left: auto; right: 0; }
     .app { grid-template-columns: 1fr; }
     .side { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--line); gap: 4px; }
     .brand { padding: 0 8px 0 0; }
@@ -169,19 +175,18 @@
 </style>
 </head>
 <body>
+<img class="bg-cat" src="assets/momo-side.png" alt="" aria-hidden="true">
 <div class="app">
   <!-- ========== 侧边栏 ========== -->
   <aside class="side">
     <div class="brand">
-      <div class="brand-mark">
-        <svg viewBox="-50 -55 100 100"><path fill="#fff" d="M-36-12-30-50-8-32ZM36-12 30-50 8-32Z"/><ellipse fill="#fff" cx="0" cy="0" rx="40" ry="36"/><path d="M-21-2a7 7 0 0 1 12 0M9-2a7 7 0 0 1 12 0" stroke="#d6332b" stroke-width="5" fill="none" stroke-linecap="round"/></svg>
-      </div>
+      <img class="brand-mark" src="assets/logo.png" alt="Daily Ink">
       <div><b>Daily Ink</b><small>每日一墨</small></div>
     </div>
 
     <div class="side-label">卡片</div>
     <button class="nav tab active" data-tab="fortune"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></svg>运势签</button>
-    <button class="nav tab" data-tab="daily"><svg viewBox="0 0 24 24"><path d="M5 9 4 3l5 3M19 9l1-6-5 3"/><circle cx="12" cy="13" r="8"/><path d="M9 13h.01M15 13h.01"/></svg>每日一句</button>
+    <button class="nav tab" data-tab="daily"><img class="nav-cat" src="assets/momo-nav.png" alt="">每日一句</button>
     <button class="nav tab" data-tab="calendar"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>月历</button>
     <button class="nav tab" data-tab="todo"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg>待办</button>
     <button class="nav tab" data-tab="status"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M7 12h10"/></svg>状态牌</button>
@@ -383,6 +388,7 @@
 <script src="vendor/lunar.js"></script>
 <script src="js/fortune.js"></script>
 <script src="js/momo.js"></script>
+<script src="js/momo-img.js"></script>
 <script src="js/epd.js"></script>
 <script src="js/cards.js"></script>
 <script src="js/app.js"></script>

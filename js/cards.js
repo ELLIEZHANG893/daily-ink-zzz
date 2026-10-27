@@ -135,7 +135,15 @@
     const accent = opt.useRed ? RED : INK;
     const d = opt.date || new Date();
     base(ctx); frame(ctx);
-    root.Momo.drawMomo(ctx, 92, 118, 1.05, accent);
+    const img = root.Momo.frontImg;
+    if (img && img.complete && img.naturalWidth) {
+      // 墨墨正面形象：放进左侧 150×200 的区域，保持比例
+      const bw = 150, bh = 200, sc = Math.min(bw / img.naturalWidth, bh / img.naturalHeight);
+      const w = img.naturalWidth * sc, h = img.naturalHeight * sc;
+      ctx.drawImage(img, 17 + (bw - w) / 2, 24 + (bh - h), w, h);
+    } else {
+      root.Momo.drawMomo(ctx, 92, 118, 1.05, accent);
+    }
     ctx.fillStyle = INK; ctx.font = `700 15px ${SANS}`;
     centerTextAt(ctx, "—— 墨墨说", 92, 236, `700 15px ${SANS}`, INK);
     // 日期
