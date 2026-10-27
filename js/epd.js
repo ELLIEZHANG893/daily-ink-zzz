@@ -99,13 +99,29 @@
     async _open() {
       this.reset();
       this.log(`正在连接 ${this.device.name}…`);
-      let server, err;
-      for (let i = 0; i < 4; i++) {
-        try { server = await this.device.gatt.connect(); break; }
-        catch (e) { err = e; await sleep(400 * (i + 1)); }
+      // 这类屏幕响应慢，常要试好几次才连得上：每次最多等 20 秒，最多试 6 次
+      const TRIES = 6;
+      let server, svc, err;
+      for (let i = 1; i <= TRIES; i++) {
+        this.onprogress && this.onprogress(i, TRIES);
+        if (i > 1) this.log(`第 ${i} 次尝试连接…`);
+        try {
+          server = await Promise.race([
+            this.device.gatt.connect(),
+            sleep(20000).then(() => { throw new Error("连接超时"); }),
+          ]);
+          svc = await server.getPrimaryService(SERVICE);
+          break;
+        } catch (e) {
+          err = e; server = null;
+          try { this.device.gatt.disconnect(); } catch (_) {}
+          if (i < TRIES) await sleep(Math.min(2000 * i, 8000));
+        }
       }
-      if (!server) throw err;
-      const svc = await server.getPrimaryService(SERVICE);
+      if (!svc) {
+        const e = new Error(`试了 ${TRIES} 次都没连上屏幕（${err && err.message || err}）。屏幕可能正被别的程序或手机连着，或者离电脑太远。`);
+        e.name = "ConnectFailed"; throw e;
+      }
       this.char = await svc.getCharacteristic(CHAR);
       await this.char.startNotifications();
       this.char.addEventListener("characteristicvaluechanged", (e) => this._notify(new Uint8Array(e.target.value.buffer)));

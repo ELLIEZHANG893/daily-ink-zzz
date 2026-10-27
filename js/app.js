@@ -208,6 +208,7 @@
     $("btnSlide").disabled = !on || busy || photos.length < 2;
   }
   ink.onchange = refreshConn;
+  ink.onprogress = (i, n) => showScan("", `<span class="spin"></span>正在连接 <b>${ink.device ? ink.device.name : "墨水屏"}</b>…${i > 1 ? `（第 ${i}/${n} 次尝试，这块屏常要多试几次）` : ""}`);
 
   async function guard(fn, okMsg) {
     busy = true; refreshConn();
