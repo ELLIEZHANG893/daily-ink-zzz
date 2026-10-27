@@ -75,7 +75,7 @@
     }
     reset() {
       this.driver = null; this.mtu = 20; this.rle = false;
-      this.slotCount = 0; this.slot = 0; this.battery = null; this.firstNotify = true;
+      this.slotCount = 0; this.slot = 0; this.battery = null; this.timeReported = false; this.firstNotify = true;
     }
     get connected() { return !!(this.device && this.device.gatt.connected && this.char); }
     get info() { return DRIVERS[this.driver] || null; }
@@ -145,7 +145,9 @@
         this.slotCount = parseInt(p[0]) || 0;
         if (p.length > 2) this.slot = parseInt(p[2]) || 0;
       } else if (msg.startsWith("t=")) {
-        const m = msg.match(/bat=(\d+)/); if (m) this.battery = parseInt(m[1]);
+        this.timeReported = true;
+        const m = msg.match(/bat=(\d+)/);
+        if (m && +m[1] > 0) { this.battery = parseInt(m[1]); this.onchange && this.onchange(); }
       } else if (msg.startsWith("UNREGISTERED")) {
         this.log("提示：设备返回「未注册」，部分功能可能受限。");
       }
@@ -246,7 +248,17 @@
     disconnect() { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); }
   }
 
-  const api = { InkDevice, encodePlanes, rleCompress, rleChunks, DRIVERS };
+  /** 电池电压（mV）换算成百分比，算法与 EPD-nRF5 固件屏幕上显示的一致 */
+  function batteryPercent(mv) {
+    const a = (mv * 2047) / 3600;
+    if (a > 1705) return 100;
+    if (a > 1584) return 28 + Math.floor((72 * (a - 1584)) / 121);
+    if (a > 1360) return 4 + Math.floor((24 * (a - 1360)) / 224);
+    if (a > 1136) return Math.floor((4 * (a - 1136)) / 224);
+    return 0;
+  }
+
+  const api = { InkDevice, batteryPercent, encodePlanes, rleCompress, rleChunks, DRIVERS };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.EPD = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

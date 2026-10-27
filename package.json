@@ -1,7 +1,7 @@
 {
   "name": "daily-ink",
   "productName": "Daily Ink",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "让 4.2 寸蓝牙墨水屏每天换一张卡片 · by zzz (Ellie Zhang)",
   "main": "desktop/main.js",
   "author": "zzz (Ellie Zhang)",

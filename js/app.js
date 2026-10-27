@@ -195,13 +195,25 @@
     if (on) {
       sub = d ? d.name : (ink.driver != null ? `未支持的驱动 0x${ink.driver.toString(16)}` : "已连接");
       if (ink.slotCount) sub += ` · ${ink.slotCount} 个图片槽位`;
-      if (ink.battery) sub += ` · 电池 ${(ink.battery / 1000).toFixed(2)}V`;
+      if (ink.battery) sub += ` · 电量 ${EPD.batteryPercent(ink.battery)}%`;
     } else if (ink.device) sub = "已断开，点击「重新连接」";
     $("connSub").textContent = sub;
     $("statDevice").textContent = on ? ink.device.name : "未连接";
     $("statDeviceSub").textContent = on ? (d ? d.name : "已连接") : (ink.device ? "已断开，可在下方重新连接" : "在下方「设备」里点连接");
-    $("statBattery").textContent = on && ink.battery ? `${(ink.battery / 1000).toFixed(2)} V` : "—";
-    $("statBatterySub").textContent = on ? (ink.slotCount ? `${ink.slotCount} 个图片槽位` : "无图片槽位") : "连接后显示";
+    const slots = ink.slotCount ? `${ink.slotCount} 个图片槽位` : "无图片槽位";
+    if (on && ink.battery) {
+      const pct = EPD.batteryPercent(ink.battery);
+      $("statBattery").textContent = `${pct}%`;
+      $("statBattery").style.color = pct <= 20 ? "var(--warn)" : "";
+      $("statBatterySub").textContent = `${(ink.battery / 1000).toFixed(2)} V · ${slots}${pct <= 20 ? " · 电量低，记得换电池" : ""}`;
+    } else if (on) {
+      $("statBattery").textContent = ink.timeReported ? "固件未提供" : "读取中…";
+      $("statBattery").style.color = "";
+      $("statBatterySub").textContent = ink.timeReported ? `这块屏不通过蓝牙报告电量，可切到屏幕自带日历查看 · ${slots}` : slots;
+    } else {
+      $("statBattery").textContent = "—"; $("statBattery").style.color = "";
+      $("statBatterySub").textContent = "连接后显示";
+    }
     $("btnConnect").textContent = on ? "已连接" : ink.device ? "重新连接" : "连接";
     $("btnConnect").disabled = on || busy || !navigator.bluetooth;
     ["btnCalendar", "btnClear", "btnDisconnect", "btnSend", "btnStopSlide"].forEach((id) => ($(id).disabled = !on || busy));
