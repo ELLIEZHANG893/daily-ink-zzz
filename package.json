@@ -89,5 +89,8 @@
       "repo": "daily-ink-zzz",
       "releaseType": "release"
     }
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0"
   }
 }

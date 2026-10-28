@@ -159,6 +159,57 @@
   body.desktop .row.desktop-only { display: flex !important; }
   body.desktop .web-only { display: none !important; }
 
+  /* ---------- 新手引导：黑猫墨墨弹窗 ---------- */
+  .momo-guide { position: fixed; inset: 0; z-index: 1000; display: none; }
+  .mg-block { position: absolute; inset: 0; transition: background .3s ease; }
+  .momo-guide.dim .mg-block { background: rgba(16,16,22,.55); }
+  .mg-spot {
+    position: fixed; border-radius: 14px; pointer-events: none; opacity: 0;
+    box-shadow: 0 0 0 9999px rgba(16,16,22,.55); outline: 2px dashed rgba(255,255,255,.75); outline-offset: 4px;
+    transition: left .3s ease, top .3s ease, width .3s ease, height .3s ease;
+  }
+  .mg-card {
+    --fur: #151517; --eye: #e3a13a; --ear: #7d4650;
+    position: fixed; width: min(330px, calc(100vw - 72px)); padding: 34px 22px 18px;
+    background: var(--fur); color: #f3efe6;
+    border-radius: 34px 30px 38px 36px / 28px 26px 44px 42px; /* 圆滚滚、不规则的猫身形状 */
+    box-shadow: 0 18px 44px rgba(0,0,0,.35);
+    transition: left .3s ease, top .3s ease;
+  }
+  .mg-card.pop { animation: mgPop .38s cubic-bezier(.3,1.5,.5,1); }
+  @keyframes mgPop { from { transform: scale(.82) translateY(10px); opacity: 0; } }
+  .mg-ear { position: absolute; top: -21px; width: 46px; height: 40px; background: var(--fur); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .mg-ear::after { content: ""; position: absolute; inset: 13px 13px 0; background: var(--ear); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  .mg-ear.l { left: 28px; transform: rotate(-14deg); }
+  .mg-ear.r { right: 28px; transform: rotate(14deg); }
+  .mg-eyes { position: absolute; top: 9px; left: 50%; transform: translateX(-50%); display: flex; gap: 26px; }
+  .mg-eyes i {
+    width: 17px; height: 17px; border-radius: 50%;
+    background: radial-gradient(circle at 36% 34%, #fff 0 2px, transparent 2.6px), radial-gradient(circle, #0b0b0c 0 4.5px, var(--eye) 5px);
+    animation: mgBlink 4.5s infinite;
+  }
+  @keyframes mgBlink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.12); } }
+  .mg-card b { display: block; font-size: 17px; color: #fff; letter-spacing: .2px; margin-bottom: 6px; }
+  .mg-card p { margin: 0; font-size: 13.5px; line-height: 1.7; color: #d8d3c8; }
+  .mg-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .mg-dots { display: flex; gap: 5px; flex: 1; }
+  .mg-dots i { width: 6px; height: 6px; border-radius: 50%; background: #4a4a50; }
+  .mg-dots i.on { background: var(--eye); width: 16px; border-radius: 99px; }
+  .mg-skip { border: 0; background: transparent; color: #9c978d; cursor: pointer; padding: 6px 8px; font-size: 13px; }
+  .mg-skip:hover { color: #fff; }
+  .mg-next { border: 0; background: #f3efe6; color: var(--fur); font-weight: 700; border-radius: 99px; padding: 7px 18px; cursor: pointer; }
+  .mg-next:hover { background: #fff; }
+  .mg-next:focus-visible, .mg-skip:focus-visible { outline: 2px solid var(--eye); outline-offset: 2px; }
+  .mg-paw { position: absolute; bottom: -9px; width: 32px; height: 19px; background: var(--fur); border-radius: 50% 50% 46% 46%; }
+  .mg-paw.l { left: 24%; } .mg-paw.r { right: 24%; }
+  .mg-tail { position: absolute; right: -36px; bottom: 4px; width: 46px; height: 62px; overflow: visible; transform-origin: 4px 10px; animation: mgWag 2.6s ease-in-out infinite; }
+  .mg-tail path { fill: none; stroke: var(--fur); stroke-width: 9; stroke-linecap: round; }
+  @keyframes mgWag { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-12deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .momo-guide *, .momo-guide *::after { animation: none !important; transition: none !important; }
+  }
+  .btn .guide-cat { width: 18px; height: 18px; object-fit: contain; }
+
   /* ---------- 窄屏 ---------- */
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
   @media (max-width: 860px) {
@@ -207,6 +258,7 @@
         <p id="pageSub">按八字和当天干支生成你自己的每日运势</p>
       </div>
       <div class="spacer"></div>
+      <button id="btnGuide" type="button" class="btn ghost"><img class="guide-cat" src="assets/momo-nav.png" alt="">新手引导</button>
       <button id="btnSend" class="btn primary" disabled>
         <svg viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></svg>发送到墨水屏
       </button>
@@ -254,7 +306,28 @@
               <label>看哪一天<input type="date" id="fDay"></label>
             </div>
             <p class="natal" id="fNatal"></p>
-            <p class="hint">仅供娱乐参考。生辰只在你的电脑里计算，不会上传。</p>
+            <p class="hint">仅供娱乐参考。生辰只在你的电脑里计算，不会上传。内置 370 句签语，一年内不重复。</p>
+            <div class="ai-box desktop-only">
+              <div class="divider"></div>
+              <div class="row" style="margin:12px 0 10px"><b style="color:var(--ink)">AI 专属签文</b><span class="badge">可选</span></div>
+              <div style="display:grid;gap:12px">
+                <label class="check"><input type="checkbox" id="aiEnable">用我自己的 Claude API key，每天写一张专属签文</label>
+                <div class="two">
+                  <label>API key<input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label>
+                  <label>模型<select id="aiModel">
+                    <option value="claude-opus-5-5">Claude Opus 5.5（文笔最好）</option>
+                    <option value="claude-sonnet-5-5">Claude Sonnet 5.5（均衡）</option>
+                    <option value="claude-haiku-5-5">Claude Haiku 5.5（最省钱）</option>
+                  </select></label>
+                </div>
+                <div class="row">
+                  <button id="aiSave" type="button" class="btn">保存设置</button>
+                  <button id="aiGen" type="button" class="btn">用 AI 写这一天的签</button>
+                  <button id="aiForget" type="button" class="btn ghost">删除 key</button>
+                </div>
+                <p class="hint" id="aiStatus">key 加密保存在这台 Mac 上。开启后只会把日主、喜用五行和当天干支发给 Anthropic，不含生日和称呼；费用从你的 Anthropic 账户扣，每天最多调用一次。生成失败时自动用内置签文。</p>
+              </div>
+            </div>
           </div>
 
           <div class="form" data-form="daily">
@@ -386,11 +459,13 @@
 </div>
 
 <script src="vendor/lunar.js"></script>
+<script src="js/fortune-texts.js"></script>
 <script src="js/fortune.js"></script>
 <script src="js/momo.js"></script>
 <script src="js/momo-img.js"></script>
 <script src="js/epd.js"></script>
 <script src="js/cards.js"></script>
 <script src="js/app.js"></script>
+<script src="js/guide.js"></script>
 </body>
 </html>

@@ -14,18 +14,8 @@
   const CHONG = { 子: "午", 午: "子", 丑: "未", 未: "丑", 寅: "申", 申: "寅", 卯: "酉", 酉: "卯", 辰: "戌", 戌: "辰", 巳: "亥", 亥: "巳" };
   const LIUHE = { 子: "丑", 丑: "子", 寅: "亥", 亥: "寅", 卯: "戌", 戌: "卯", 辰: "酉", 酉: "辰", 巳: "申", 申: "巳", 午: "未", 未: "午" };
 
-  const GOD_TEXT = {
-    比肩: ["同伴助力", ["约好友", "团队协作", "运动"], ["独自硬扛", "攀比"], "有人同行，路就不难走。"],
-    劫财: ["人缘活跃", ["社交", "分享", "合作"], ["借钱", "冲动消费"], "热闹之中，守住钱包也守住心。"],
-    食神: ["灵感舒展", ["创作", "美食", "放松"], ["熬夜", "拖延"], "心松一点，好点子自然来。"],
-    伤官: ["才华外露", ["表达", "提案", "学新技能"], ["顶撞上级", "口快"], "锋芒用在作品上，不用在口舌上。"],
-    正财: ["踏实有得", ["理财", "整理账目", "按计划办事"], ["投机", "贪多"], "一步一印，稳稳收获。"],
-    偏财: ["机会意外", ["把握机会", "拓展人脉"], ["赌运气", "大额投资"], "机会来了，先看清再伸手。"],
-    正官: ["贵人赏识", ["汇报", "面试", "守规矩"], ["迟到", "越权"], "认真做事，自有人看见。"],
-    七杀: ["压力化动力", ["攻坚难题", "健身"], ["与人争执", "情绪化"], "压力是磨刀石，不是绊脚石。"],
-    正印: ["贵人护佑", ["读书", "请教长辈", "陪家人"], ["想太多", "犹豫不决"], "被支持的日子，大胆向前。"],
-    偏印: ["直觉敏锐", ["独处思考", "研究", "冥想"], ["钻牛角尖", "疑神疑鬼"], "听听心里的声音，它比你想的更聪明。"],
-  };
+  // 文案库在 js/fortune-texts.js（浏览器里是全局 FortuneTexts）
+  const texts = () => root.FortuneTexts || require("./fortune-texts.js");
   const COLORS = { 金: "白色·金色", 水: "黑色·深蓝", 木: "绿色·青色", 火: "红色·紫色", 土: "黄色·棕色" };
   const DIRS = { 金: "西方", 水: "北方", 木: "东方", 火: "南方", 土: "中央" };
   const NUMS = { 金: "4·9", 水: "1·6", 木: "3·8", 火: "2·7", 土: "5·0" };
@@ -48,6 +38,17 @@
     let h = 2166136261;
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
     return h >>> 0;
+  }
+
+  /**
+   * 当天的文案。同一个人的同一种十神每 10 天出现一次，
+   * 按「第几次出现」轮换 37 句签语，所以一年内同一句不会重复。
+   */
+  function textOf(god, date) {
+    const t = texts()[god];
+    const k = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000 / 10);
+    const pick = (pool, n, salt) => pool.slice().sort((a, b) => hash(salt + k + a) - hash(salt + k + b)).slice(0, n);
+    return { theme: t.themes[k % t.themes.length], yi: pick(t.yi, 3, "宜"), ji: pick(t.ji, 2, "忌"), line: t.lines[k % t.lines.length] };
   }
 
   /** 排出八字，并用简化法判断日主强弱与喜用五行 */
@@ -98,7 +99,7 @@
     if (clash) { score -= 1; note = `${br}冲${clash}，凡事慢半拍`; }
     else if (he) { score += 0.5; note = `${br}合${he}，人和事顺`; }
     const stars = Math.max(1, Math.min(5, Math.round(score)));
-    const [theme, yi, ji, line] = GOD_TEXT[god];
+    const { theme, yi, ji, line } = textOf(god, date);
     const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
     const luckyWx = n.favorable.includes(wxOfStem(stem)) ? wxOfStem(stem) : n.favorable[hash(key) % n.favorable.length];
     const jq = lunar.getJieQi();

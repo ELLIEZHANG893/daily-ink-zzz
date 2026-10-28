@@ -60,6 +60,29 @@
     return { y, m, d, h, mi };
   }
 
+  // ---------- AI 专属签文（仅桌面版；key 只在桌面 App 的主进程里） ----------
+  let aiEnabled = false;
+  const AI_STORE = "daily-ink-ai";
+  function aiCache() { try { return JSON.parse(localStorage.getItem(AI_STORE) || "{}"); } catch (e) { return {}; } }
+  /** 同一天、同一个八字只生成一次 */
+  const aiKeyOf = (r) => `${todayStr(r.date)}|${r.natal.pillars.join("")}`;
+  async function aiGenerate(birth, day) {
+    const r = Fortune.reading(birth, day);
+    const key = aiKeyOf(r), cache = aiCache();
+    if (cache[key]) return cache[key];
+    const n = r.natal;
+    const res = await desktop.aiFortune({
+      日期: `${todayStr(day)} 周${r.week}`, 当日干支: `${r.gz}日`, 农历: r.lunar, 节气: r.jieqi || "无",
+      日主: `${n.dm}${n.dmWx}`, 日主强弱: n.weak ? "偏弱" : "偏强", 喜用五行: n.favorable.join("、"),
+      当日十神: r.god, 星级: r.stars, 冲合提示: r.note || "无",
+    });
+    const next = {}; // 只留最近 30 条
+    Object.keys(cache).sort().slice(-30).forEach((k) => (next[k] = cache[k]));
+    next[key] = res;
+    try { localStorage.setItem(AI_STORE, JSON.stringify(next)); } catch (e) {}
+    return res;
+  }
+
   /**
    * 把某种卡片画到预览画布上。date 不传就用表单里的日期；自动更新时传今天。
    */
@@ -83,7 +106,9 @@
       try {
         const r = Fortune.reading(birth, day);
         const n = r.natal;
-        $("fNatal").textContent = `八字：${n.pillars.join(" ")}　日主 ${n.dm}${n.dmWx}（${n.weak ? "偏弱" : "偏强"}），喜用 ${n.favorable.join("、")}`;
+        const ai = aiEnabled && aiCache()[aiKeyOf(r)];
+        if (ai) Object.assign(r, { theme: ai.theme, yi: ai.yi, ji: ai.ji, line: ai.line });
+        $("fNatal").textContent = `八字：${n.pillars.join(" ")}　日主 ${n.dm}${n.dmWx}（${n.weak ? "偏弱" : "偏强"}），喜用 ${n.favorable.join("、")}` + (ai ? "　· 签文由 AI 撰写" : "");
         await Cards.fontsReady(r.theme + r.line + r.yi.join("") + r.ji.join("") + r.lunar + r.note + $("fName").value);
         if (stale()) return false;
         Cards.drawFortune(ctx, r, { useRed, name: $("fName").value.trim() });
@@ -366,6 +391,45 @@
       showLast();
     };
     ["aEnable", "aTime", "aCard", "aLogin"].forEach((id) => $(id).addEventListener("change", pushSchedule));
+
+    // AI 专属签文的设置
+    const aiMsg = (e) => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, "");
+    function showAI(cfg, note) {
+      aiEnabled = cfg.enabled && cfg.hasKey;
+      $("aiEnable").checked = cfg.enabled; $("aiModel").value = cfg.model;
+      $("aiKey").value = ""; $("aiKey").placeholder = cfg.hasKey ? "已保存（重新填写可替换）" : "sk-ant-…";
+      $("aiForget").disabled = !cfg.hasKey;
+      if (note) $("aiStatus").textContent = note;
+    }
+    desktop.getAI().then((cfg) => { showAI(cfg); render(); });
+    $("aiSave").onclick = async () => {
+      try {
+        const cfg = await desktop.setAI({ enabled: $("aiEnable").checked, model: $("aiModel").value, key: $("aiKey").value });
+        showAI(cfg, !cfg.enabled ? "已保存，目前使用内置签文。" : cfg.hasKey ? "已保存。点「用 AI 写这一天的签」试试看。" : "已保存。还需要填写 API key 才能使用。");
+        render();
+      } catch (e) { $("aiStatus").textContent = "保存失败：" + aiMsg(e); }
+    };
+    $("aiForget").onclick = async () => {
+      showAI(await desktop.setAI({ enabled: false, model: $("aiModel").value, clearKey: true }), "key 已从这台 Mac 删除。");
+      render();
+    };
+    $("aiGen").onclick = async () => {
+      const birth = birthInput();
+      if (!birth) { $("aiStatus").textContent = "请先填写生日或八字。"; return; }
+      if (!aiEnabled) { $("aiStatus").textContent = "请先勾选开启、填写 key，再点「保存设置」。"; return; }
+      $("aiGen").disabled = true;
+      $("aiStatus").innerHTML = '<span class="spin"></span>墨墨正在请 AI 写签，大约要十几秒…';
+      try {
+        await aiGenerate(birth, dateOf("fDay"));
+        $("aiStatus").textContent = "写好啦，预览里就是 AI 写的签文。";
+        log("AI 签文已生成");
+        render();
+      } catch (e) {
+        $("aiStatus").textContent = "这次没写成：" + aiMsg(e);
+        log("AI 签文失败：" + aiMsg(e));
+      }
+      $("aiGen").disabled = false;
+    };
     $("aRunNow").onclick = () => runScheduled(true);
 
     function showLast() {
@@ -391,6 +455,10 @@
           catch (e) { log("读取备忘录失败，使用上次的待办：" + (e.message || e)); }
         }
         if (kind === "fortune" && !birthInput()) throw new Error("还没填写出生日期，请在「运势签」里填好");
+        if (kind === "fortune" && aiEnabled) {
+          try { await aiGenerate(birthInput(), new Date()); log("AI 签文已生成"); }
+          catch (e) { log("AI 签文失败，使用内置签文：" + aiMsg(e)); }
+        }
         await drawCard(kind, new Date());
         let ok = false;
         for (let i = 1; i <= 3 && !ok; i++) {

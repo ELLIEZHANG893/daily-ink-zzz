@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld("dailyInkDesktop", {
   onScan: (cb) => ipcRenderer.on("bt:scan", (_e, data) => cb(data)),
   chooseDevice: (id) => ipcRenderer.invoke("bt:choose", id),
   cancelScan: () => ipcRenderer.invoke("bt:cancel"),
+  getAI: () => ipcRenderer.invoke("ai:get"),
+  setAI: (s) => ipcRenderer.invoke("ai:set", s),
+  aiFortune: (info) => ipcRenderer.invoke("ai:fortune", info),
 });

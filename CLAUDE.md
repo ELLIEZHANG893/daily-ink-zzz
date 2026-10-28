@@ -15,10 +15,18 @@
 | `js/epd.js` | 蓝牙协议：`InkDevice`、图像编码、RLE 压缩、槽位、轮播、电量换算 |
 | `js/cards.js` | 400×300 卡片模板（运势签/每日一句/月历/待办/状态牌/文字/照片）和三色量化 |
 | `js/fortune.js` | 八字排盘、十神、运势签内容（依赖 `vendor/lunar.js` 的全局 `Solar`） |
-| `js/momo.js` / `js/momo-img.js` | 吉祥物墨墨：每日一句文案库、矢量备用画法、墨水屏版正面猫（data URL，避免 file:// 下画布被污染） |
+| `js/fortune-texts.js` | 运势签文案库：10 种十神 × 37 句签语 + 主题/宜/忌词库，按日期轮换，一年内不重复 |
+| `js/guide.js` | 新手引导：黑猫墨墨形状的异型弹窗，首次打开自动出现，右上角「新手引导」可重看 |
+| `js/momo.js` / `js/momo-img.js` | 吉祥物墨墨：每日一句文案库（366 句，一年每天一句）、矢量备用画法、墨水屏版正面猫（data URL，避免 file:// 下画布被污染） |
 | `assets/` | 墨墨三视图抠图、logo、导航小图标 |
 | `build/` | App 图标、Release 说明模板、.dmg 内的「打不开请看我.txt」 |
 | `.github/workflows/release.yml` | 发布 Release 时在 macOS runner 打包 arm64/x64 .dmg 并上传；手动运行则上传为 Actions 产物 |
+
+## AI 专属签文（仅桌面版，可选）
+- 用户在运势签设置里填自己的 Claude API key；key 用 Electron `safeStorage`（系统钥匙串）加密存在 `settings.json`，只在主进程解密，不传给页面。
+- 主进程 `aiFortune()` 用 `@anthropic-ai/sdk` 调用，结构化输出 JSON（theme / yi / ji / line），再检查字数，超出排版就退回内置签文。
+- 只发送日主、强弱、喜用五行和当天干支/十神/星级，不发送生日和称呼。同一天同一八字只生成一次（页面 localStorage `daily-ink-ai` 缓存）。
+- 如果 npm 默认用的是私有镜像，装依赖时加 `--registry=https://registry.npmjs.org`，避免 package-lock 里出现私有镜像地址。
 
 ## 蓝牙协议要点（作者的屏实测）
 - 服务 `62750001-d828-918d-fb46-b6c11c675aec`，特征 `…0002`；设备名 `NRF_EPD_xxxx`（作者的是 `NRF_EPD_613F`）。

@@ -6,7 +6,7 @@
  * - 读取「备忘录」里的笔记作为待办
  * daily-ink-zzz · by zzz (Ellie Zhang) · GPL-3.0
  */
-const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage, powerMonitor, shell } = require("electron");
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage, powerMonitor, shell, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { execFile } = require("child_process");
@@ -152,6 +152,94 @@ function readNote(name) {
     });
   });
 }
+
+// ---------- AI 专属签文（用户自己的 Claude API key） ----------
+// key 用系统钥匙串加密后存在本机 settings.json，只在主进程里解密使用，不会传给页面。
+const AI_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+function aiConfig() {
+  const s = readSettings().ai || {};
+  return { enabled: !!s.enabled, model: AI_MODELS.includes(s.model) ? s.model : AI_MODELS[0], hasKey: !!s.key };
+}
+function aiKey() {
+  const enc = (readSettings().ai || {}).key;
+  if (!enc) return "";
+  try { return safeStorage.decryptString(Buffer.from(enc, "base64")); } catch (e) { return ""; }
+}
+
+const AI_PROMPT = `你是「Daily Ink 每日一墨」的运势签文案作者，为一张小小的墨水屏卡片写当天的签文。
+用户会给你：当天日期、干支和节气；用户八字的日主、强弱和喜用五行；以及程序已经算好的当天十神、星级（1-5）和冲合提示。
+请结合这些信息，写出贴合这一天、这个人的文案。语气温暖、积极、生活化，像朋友的提醒。
+不要恐吓，不要绝对化的断言，不给医疗、投资、彩票方面的建议。星级低时语气更温和、多些安抚；星级高时可以更有冲劲。
+卡片空间很小，必须严格遵守字数（按汉字计）：
+- theme：今日主题，2-5 个字
+- yi：宜做的 3 件事，每件 2-4 个字
+- ji：忌做的 2 件事，每件 2-4 个字
+- line：一句签语，10-18 个字，最多一个逗号，结尾用句号`;
+
+const AI_SCHEMA = {
+  type: "object",
+  properties: {
+    theme: { type: "string" },
+    yi: { type: "array", items: { type: "string" } },
+    ji: { type: "array", items: { type: "string" } },
+    line: { type: "string" },
+  },
+  required: ["theme", "yi", "ji", "line"],
+  additionalProperties: false,
+};
+
+async function aiFortune(info) {
+  const key = aiKey();
+  if (!key) throw new Error("还没有填写 API key");
+  const { model } = aiConfig();
+  const Anthropic = require("@anthropic-ai/sdk");
+  const client = new Anthropic({ apiKey: key, timeout: 90 * 1000 });
+  const body = {
+    model, max_tokens: 16000,
+    output_config: { effort: "low", format: { type: "json_schema", schema: AI_SCHEMA } },
+    system: AI_PROMPT,
+    messages: [{ role: "user", content: JSON.stringify(info) }],
+  };
+  let res;
+  try {
+    // Opus / Sonnet 偶尔会被安全策略误拒，开启「被拒时自动换模型重试」；Haiku 不支持这个参数
+    res = model === "claude-haiku-5-5"
+      ? await client.messages.create(body)
+      : await client.beta.messages.create({ ...body, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) throw new Error("API key 无效，请检查是否填对");
+    if (e instanceof Anthropic.PermissionDeniedError) throw new Error("这个 key 没有使用该模型的权限");
+    if (e instanceof Anthropic.RateLimitError) throw new Error("请求太频繁或额度不足，稍后再试");
+    if (e instanceof Anthropic.APIConnectionError) throw new Error("连不上 Anthropic，请检查网络");
+    if (e instanceof Anthropic.APIError) throw new Error(`Claude 接口出错（${e.status || "?"}）：${e.message}`);
+    throw e;
+  }
+  if (res.stop_reason === "refusal") throw new Error("模型这次没有生成，先用内置签文");
+  if (res.stop_reason === "max_tokens") throw new Error("生成被截断了，先用内置签文");
+  const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+  const out = JSON.parse(text);
+  // 再检查一遍长度，超出卡片排版就不用
+  const len = (s) => [...String(s || "").trim()].length;
+  const yi = (out.yi || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 3);
+  const ji = (out.ji || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 2);
+  const ok = len(out.theme) >= 2 && len(out.theme) <= 6 && yi.length === 3 && ji.length === 2
+    && yi.every((s) => len(s) <= 5) && ji.every((s) => len(s) <= 5) && len(out.line) >= 4 && len(out.line) <= 22;
+  if (!ok) throw new Error("AI 写的字数超出了卡片，先用内置签文");
+  return { theme: out.theme.trim(), yi, ji, line: out.line.trim(), model: res.model };
+}
+
+ipcMain.handle("ai:get", () => aiConfig());
+ipcMain.handle("ai:set", (_e, s) => {
+  const ai = { ...(readSettings().ai || {}), enabled: !!s.enabled, model: AI_MODELS.includes(s.model) ? s.model : AI_MODELS[0] };
+  if (typeof s.key === "string" && s.key.trim()) {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("这台 Mac 暂时无法加密保存 key");
+    ai.key = safeStorage.encryptString(s.key.trim()).toString("base64");
+  }
+  if (s.clearKey) ai.key = "";
+  writeSettings({ ai });
+  return aiConfig();
+});
+ipcMain.handle("ai:fortune", (_e, info) => aiFortune(info));
 
 // ---------- 与页面通信 ----------
 ipcMain.handle("schedule:set", (_e, s) => {
