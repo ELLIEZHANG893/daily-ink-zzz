@@ -118,6 +118,8 @@
   .hint { font-size: 12.5px; color: var(--muted); margin: 0; }
   .natal { font-size: 13px; color: var(--ink); background: var(--soft); border-radius: 10px; padding: 9px 12px; margin: 0; }
   .divider { border-top: 1px solid var(--line); margin: 4px 0; }
+  select.mini { width: auto; padding: 5px 28px 5px 10px; font-size: 12.5px; border-radius: 8px; }
+  select.mini:disabled { opacity: .7; cursor: not-allowed; }
   .auto-pick { display: grid; gap: 8px; }
   .auto-pick > b { color: var(--ink); font-size: 13.5px; }
   .auto-opt { display: flex; align-items: center; gap: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
@@ -439,13 +441,23 @@
       <!-- 右：预览 + 自动更新 + 日志 -->
       <div class="stack">
         <section class="panel">
-          <div class="panel-head"><h2>屏幕预览</h2><small>4.2 寸 · 400×300 · 黑白红</small></div>
+          <div class="panel-head"><h2>屏幕预览</h2><select id="scrModel" class="mini" title="选择你的墨水屏尺寸"></select></div>
+          <div class="row" id="scrCustom" style="display:none;margin:-4px 0 12px">
+            <label style="flex:1">宽（像素）<input type="number" id="scrW" min="100" max="1600" value="400"></label>
+            <label style="flex:1">高（像素）<input type="number" id="scrH" min="80" max="1200" value="300"></label>
+          </div>
           <div class="device">
             <canvas id="preview" width="400" height="300"></canvas>
             <div class="device-foot"><i></i></div>
           </div>
           <div class="progress"><i id="bar"></i></div>
           <p class="hint" id="sendHint" style="margin-top:10px">预览就是屏幕上的最终效果。发送后屏幕会闪烁十几秒，这是正常的刷新过程。</p>
+          <div class="divider" style="margin:14px 0 12px"></div>
+          <div class="row">
+            <button id="btnDownload" type="button" class="btn"><svg viewBox="0 0 24 24"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>下载图片</button>
+            <select id="dlFormat" class="mini" title="图片格式"><option value="png">PNG</option><option value="bmp">BMP（24 位）</option></select>
+          </div>
+          <p class="hint" style="margin-top:8px">别的墨水屏也能用：选好上面的屏幕尺寸，下载图片，再用屏幕自己的 App 或存储卡导入。</p>
         </section>
 
         <section class="panel desktop-only" id="autoBox">

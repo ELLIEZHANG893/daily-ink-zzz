@@ -8,20 +8,20 @@
   const CHAR = "62750002-d828-918d-fb46-b6c11c675aec";
   const CMD = { INIT: 0x01, CLEAR: 0x02, REFRESH: 0x05, SET_TIME: 0x20, WRITE_IMG: 0x30, SET_SLOT: 0x31, SET_SLIDE: 0x33 };
 
-  // 4.2 寸各驱动的颜色模式
+  // 各驱动的颜色模式和分辨率（目前都是 4.2 寸 400×300；以后加新尺寸只需在这里登记）
   const DRIVERS = {
-    0x01: { name: "4.2寸 黑白 UC8176", mode: "BW" },
-    0x04: { name: "4.2寸 黑白 SSD1619", mode: "BW" },
-    0x17: { name: "4.2寸 黑白 SSD1683", mode: "BW" },
-    0x03: { name: "4.2寸 三色 UC8176", mode: "BWR" },
-    0x02: { name: "4.2寸 三色 SSD1619", mode: "BWR" },
-    0x16: { name: "4.2寸 三色 SSD1683", mode: "BWR" },
+    0x01: { name: "4.2寸 黑白 UC8176", mode: "BW", w: 400, h: 300 },
+    0x04: { name: "4.2寸 黑白 SSD1619", mode: "BW", w: 400, h: 300 },
+    0x17: { name: "4.2寸 黑白 SSD1683", mode: "BW", w: 400, h: 300 },
+    0x03: { name: "4.2寸 三色 UC8176", mode: "BWR", w: 400, h: 300 },
+    0x02: { name: "4.2寸 三色 SSD1619", mode: "BWR", w: 400, h: 300 },
+    0x16: { name: "4.2寸 三色 SSD1683", mode: "BWR", w: 400, h: 300 },
   };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---------- 图像编码 ----------
-  /** 把 400x300 的 RGBA 数据转成 黑白层 + 红色层（1 = 白 / 无红） */
+  /** 把 RGBA 数据转成 黑白层 + 红色层（1 = 白 / 无红） */
   function encodePlanes(imageData) {
     const { width: w, height: h, data } = imageData;
     const bw = Math.ceil(w / 8);
@@ -175,10 +175,11 @@
       }
     }
 
-    /** 发送一张 400x300 的图片并刷新屏幕 */
+    /** 发送一张和屏幕分辨率一致的图片并刷新屏幕 */
     async sendImage(imageData, onProgress) {
       const d = this.info;
       if (!d) throw new Error("暂不支持这块屏的驱动" + (this.driver != null ? ` 0x${this.driver.toString(16)}` : "") + "，目前只支持 4.2 寸黑白/三色屏。");
+      if (imageData.width !== d.w || imageData.height !== d.h) throw new Error(`图片是 ${imageData.width}×${imageData.height}，这块屏需要 ${d.w}×${d.h}，请在「屏幕预览」里选对屏幕尺寸`);
       const { black, red } = encodePlanes(imageData);
       const useSlot = this.slotCount > 0;
       if (useSlot) await this.write(CMD.SET_SLOT, Uint8Array.of(0, this.slot));

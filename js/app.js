@@ -18,8 +18,12 @@
 
   // ---------- 本地记住设置（只存在本机） ----------
   const SAVE_IDS = ["fBirthDate", "fBirthTime", "fPillars", "fName", "dText", "cWeekStart", "tTitle", "tText", "tNoteName",
-    "sTitle", "sSub", "sBadge", "qText", "qAuthor", "iInterval", "aTime", "aCard"];
+    "sTitle", "sSub", "sBadge", "qText", "qAuthor", "iInterval", "aTime", "aCard", "scrModel", "scrW", "scrH", "dlFormat"];
   const SAVE_CHECKS = ["useRed", "iDither", "aEnable", "aLogin"];
+  // 屏幕尺寸选项要在读取保存的设置之前准备好
+  Object.entries(Cards.SCREENS).forEach(([id, s]) => $("scrModel").appendChild(new Option(s.name, id)));
+  $("scrModel").appendChild(new Option("自定义尺寸…", "custom"));
+
   function store() { try { return JSON.parse(localStorage.getItem("daily-ink") || "{}"); } catch (e) { return {}; } }
   function load() {
     const s = store();
@@ -234,6 +238,14 @@
       if (ink.battery) sub += ` · 电量 ${EPD.batteryPercent(ink.battery)}%`;
     } else if (ink.device) sub = "已断开，点击「重新连接」";
     $("connSub").textContent = sub;
+    // 连上屏幕后，预览自动换成这块屏的尺寸，并锁定尺寸选择
+    if (on && d && (canvas.width !== d.w || canvas.height !== d.h)) {
+      const id = Object.keys(Cards.SCREENS).find((k) => Cards.SCREENS[k].w === d.w && Cards.SCREENS[k].h === d.h);
+      if (id) $("scrModel").value = id; else { $("scrModel").value = "custom"; $("scrW").value = d.w; $("scrH").value = d.h; }
+      applyScreen(); render();
+      log(`已按连接的屏幕切换到 ${d.w}×${d.h}`);
+    }
+    $("scrModel").disabled = $("scrW").disabled = $("scrH").disabled = on && !!d;
     $("statDevice").textContent = on ? ink.device.name : "未连接";
     $("statDeviceSub").textContent = on ? (d ? d.name : "已连接") : (ink.device ? "已断开，可在下方重新连接" : "在下方「设备」里点连接");
     const slots = ink.slotCount ? `${ink.slotCount} 个图片槽位` : "无图片槽位";
@@ -331,6 +343,49 @@
       }
     });
   }
+
+  // ---------- 屏幕尺寸 ----------
+  function screenSize() {
+    const id = $("scrModel").value;
+    if (id !== "custom") return Cards.SCREENS[id] || Cards.SCREENS["4.2"];
+    const clamp = (v, lo, hi, d) => Math.max(lo, Math.min(hi, Math.round(+v) || d));
+    return { w: clamp($("scrW").value, 100, 1600, 400), h: clamp($("scrH").value, 80, 1200, 300) };
+  }
+  function applyScreen() {
+    const { w, h } = screenSize();
+    $("scrCustom").style.display = $("scrModel").value === "custom" ? "" : "none";
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    canvas.style.aspectRatio = `${w} / ${h}`;
+    Cards.setSize(w, h);
+  }
+  ["scrModel", "scrW", "scrH"].forEach((id) => $(id).addEventListener("change", () => { applyScreen(); render(); }));
+
+  // ---------- 下载为图片（任何墨水屏都能用） ----------
+  /** 24 位 BMP：很多带存储卡的墨水屏、相框只认这种格式 */
+  function bmpBlob(img) {
+    const { width: w, height: h, data } = img;
+    const row = Math.ceil((w * 3) / 4) * 4, size = 54 + row * h;
+    const v = new DataView(new ArrayBuffer(size));
+    v.setUint16(0, 0x4d42, true); v.setUint32(2, size, true); v.setUint32(10, 54, true);
+    v.setUint32(14, 40, true); v.setInt32(18, w, true); v.setInt32(22, h, true);
+    v.setUint16(26, 1, true); v.setUint16(28, 24, true); v.setUint32(34, row * h, true);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = ((h - 1 - y) * w + x) * 4, o = 54 + y * row + x * 3; // BMP 从最下面一行开始存，颜色顺序是 BGR
+      v.setUint8(o, data[i + 2]); v.setUint8(o + 1, data[i + 1]); v.setUint8(o + 2, data[i]);
+    }
+    return new Blob([v.buffer], { type: "image/bmp" });
+  }
+  $("btnDownload").onclick = async () => {
+    const fmt = $("dlFormat").value;
+    const blob = fmt === "bmp" ? bmpBlob(ctx.getImageData(0, 0, canvas.width, canvas.height)) : await new Promise((r) => canvas.toBlob(r, "image/png"));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `daily-ink-${tab}-${todayStr()}-${canvas.width}x${canvas.height}.${fmt}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    log(`已下载 ${a.download}`);
+    save();
+  };
 
   async function sendCurrent() {
     $("bar").style.width = "0";
@@ -502,7 +557,8 @@
         await drawCard(kind, new Date());
         let ok = false;
         for (let i = 1; i <= 3 && !ok; i++) {
-          ok = await guard(async () => { await ensureConnected(); await sendCurrent(); });
+          // 连上后再画一次：屏幕尺寸可能刚按连接的屏幕切换过
+          ok = await guard(async () => { await ensureConnected(); await drawCard(kind, new Date()); await sendCurrent(); });
           if (!ok) { err = "连接或发送失败"; await sleep(10000 * i); }
         }
         if (ok) { err = ""; log("等待屏幕刷新完成…"); await sleep(40000); ink.disconnect(); refreshConn(); }
@@ -536,6 +592,7 @@
     render();
   }, 60 * 1000);
   load();
+  applyScreen();
   syncFortuneMode();
   setTab(tab, true);
   refreshConn();
