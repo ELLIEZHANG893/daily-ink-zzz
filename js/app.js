@@ -51,9 +51,11 @@
     const l = Solar.fromYmd(date.getFullYear(), date.getMonth() + 1, date.getDate()).getLunar();
     return { lunar: `农历${l.getMonthInChinese()}月${l.getDayInChinese()}`, gz: `${l.getDayInGanZhi()}日`, jieqi: l.getJieQi() || "" };
   }
+  /** 读取生辰；还没填时返回 null（不提供任何默认生日） */
   function birthInput() {
-    if (fMode() === "pillars") return { pillars: $("fPillars").value };
-    const [y, m, d] = ($("fBirthDate").value || "2000-01-01").split("-").map(Number);
+    if (fMode() === "pillars") return $("fPillars").value.trim() ? { pillars: $("fPillars").value } : null;
+    if (!$("fBirthDate").value) return null;
+    const [y, m, d] = $("fBirthDate").value.split("-").map(Number);
     const [h, mi] = ($("fBirthTime").value || "12:00").split(":").map(Number);
     return { y, m, d, h, mi };
   }
@@ -69,8 +71,17 @@
 
     if (kind === "fortune") {
       const day = date || dateOf("fDay");
+      const birth = birthInput();
+      if (!birth) {
+        $("fNatal").textContent = fMode() === "pillars" ? "请填写四柱八字，例如：甲子 丙寅 戊辰 庚申" : "请先填写出生日期。出生时间不知道可以留空，会按中午 12 点计算。";
+        await Cards.fontsReady("填写生日就能看到你的每日运势签");
+        if (stale()) return false;
+        Cards.drawStatus(ctx, { title: "填写生日", sub: "就能看到你的每日运势签", badge: "运势签", useRed });
+        Cards.quantize(ctx, { dither: false, useRed });
+        return true;
+      }
       try {
-        const r = Fortune.reading(birthInput(), day);
+        const r = Fortune.reading(birth, day);
         const n = r.natal;
         $("fNatal").textContent = `八字：${n.pillars.join(" ")}　日主 ${n.dm}${n.dmWx}（${n.weak ? "偏弱" : "偏强"}），喜用 ${n.favorable.join("、")}`;
         await Cards.fontsReady(r.theme + r.line + r.yi.join("") + r.ji.join("") + r.lunar + r.note + $("fName").value);
@@ -379,6 +390,7 @@
           try { $("tText").value = await desktop.readNote($("tNoteName").value.trim()); }
           catch (e) { log("读取备忘录失败，使用上次的待办：" + (e.message || e)); }
         }
+        if (kind === "fortune" && !birthInput()) throw new Error("还没填写出生日期，请在「运势签」里填好");
         await drawCard(kind, new Date());
         let ok = false;
         for (let i = 1; i <= 3 && !ok; i++) {
