@@ -70,7 +70,7 @@
   class InkDevice {
     constructor(log) {
       this.log = log || (() => {});
-      this.device = null; this.char = null;
+      this.device = null; this.char = null; this.connectedAt = 0; this.manual = false;
       this.reset();
     }
     reset() {
@@ -87,8 +87,25 @@
         ? { acceptAllDevices: true, optionalServices: [SERVICE] }
         : { filters: [{ namePrefix: prefix }], optionalServices: [SERVICE] };
       this.device = await navigator.bluetooth.requestDevice(req);
-      this.device.addEventListener("gattserverdisconnected", () => { this.char = null; this.log("连接已断开"); this.onchange && this.onchange(); });
+      // 同一块屏再次选中时，浏览器会给回同一个对象，监听只挂一次
+      this.hooked = this.hooked || new WeakSet();
+      if (!this.hooked.has(this.device)) {
+        this.hooked.add(this.device);
+        this.device.addEventListener("gattserverdisconnected", () => this._dropped());
+      }
       await this._open();
+    }
+
+    /**
+     * 连接断开时调用。屏幕固件申请的连接参数 Mac 不接受，被拒 3 次后会主动断开（连上后约 35～65 秒），
+     * 这属于正常待机：记住这块屏，下次发送时自动重连。
+     */
+    _dropped() {
+      const since = this.connectedAt;
+      this.connectedAt = 0; this.char = null;
+      if (since) this.log(this.manual ? "已断开" : `屏幕主动断开了连接（保持了 ${Math.round((Date.now() - since) / 1000)} 秒），进入待机；下次发送会自动重新连接`);
+      this.manual = false;
+      this.onchange && this.onchange();
     }
 
     async reconnect() {
@@ -105,6 +122,8 @@
       for (let i = 1; i <= TRIES; i++) {
         this.onprogress && this.onprogress(i, TRIES);
         if (i > 1) this.log(`第 ${i} 次尝试连接…`);
+        // 屏幕大约每秒广播一次：先等到它的广播再连，比盲连更快、更少超时
+        if (await this._waitAdvert(i === 1 ? 5000 : 10000)) this.log("收到屏幕信号，开始连接…");
         try {
           server = await Promise.race([
             this.device.gatt.connect(),
@@ -128,8 +147,28 @@
       await this.write(CMD.INIT);
       await sleep(1200);
       const d = this.info;
+      this.connectedAt = Date.now();
       this.log(`已连接 ${this.device.name}` + (d ? `（${d.name}）` : this.driver != null ? `（未知驱动 0x${this.driver.toString(16)}）` : ""));
       this.onchange && this.onchange();
+    }
+
+    /**
+     * 等屏幕发出广播（浏览器支持 watchAdvertisements 时），最多等 ms 毫秒。
+     * 返回是否等到了；不支持时立刻返回 false，照常直接连接。
+     */
+    async _waitAdvert(ms) {
+      const dev = this.device;
+      if (!dev.watchAdvertisements) return false;
+      const ac = new AbortController();
+      try {
+        return await new Promise((resolve) => {
+          const done = (v) => { dev.removeEventListener("advertisementreceived", onAdv); clearTimeout(t); resolve(v); };
+          const onAdv = () => done(true);
+          const t = setTimeout(() => done(false), ms);
+          dev.addEventListener("advertisementreceived", onAdv);
+          dev.watchAdvertisements({ signal: ac.signal }).catch(() => done(false));
+        });
+      } finally { ac.abort(); }
     }
 
     _notify(data) {
@@ -216,18 +255,23 @@
      * 多图轮播：第 1 张存进槽位 1 并立即显示，其余存进后面的槽位，
      * 然后让屏幕每隔 minutes 分钟自己翻到下一张（不需要电脑在线）。
      */
-    async slideshow(images, minutes, onProgress) {
+    async slideshow(images, minutes, onProgress, from = 0) {
       if (!this.info) throw new Error("暂不支持这块屏的驱动。");
       if (!this.slotCount) throw new Error("这块屏的固件没有图片槽位，不支持多图轮播。");
       const n = Math.min(images.length, this.slotCount);
       if (n < 2) throw new Error("轮播至少需要 2 张图片。");
       const per = 100 / n;
-      this.slot = 0;
-      await this.sendImage(images[0], (p) => onProgress && onProgress(p * per / 100));
-      this.log("第 1 张已显示，等屏幕刷新完再存后面的图…");
-      await sleep(20000);
-      for (let i = 1; i < n; i++) {
+      // slideNext 记录存到第几张：中途掉线重连后，从这一张接着存（屏幕约一分钟会主动断开一次）
+      if (from === 0) {
+        this.slot = 0;
+        await this.sendImage(images[0], (p) => onProgress && onProgress(p * per / 100));
+        this.slideNext = 1;
+        this.log("第 1 张已显示，等屏幕刷新完再存后面的图…");
+        await sleep(20000);
+      } else this.log(`从第 ${from + 1} 张接着存…`);
+      for (let i = Math.max(1, from); i < n; i++) {
         await this._storeOnly(images[i], i, onProgress, per * i, per);
+        this.slideNext = i + 1;
         this.log(`第 ${i + 1} 张已存入槽位 ${i + 1}`);
       }
       const m = Math.max(1, Math.min(65535, Math.round(minutes)));
@@ -246,7 +290,7 @@
       await this.write(CMD.SET_TIME, Uint8Array.of(t >>> 24 & 255, t >>> 16 & 255, t >>> 8 & 255, t & 255, -new Date().getTimezoneOffset() / 60, mode));
     }
     async clear() { await this.write(CMD.CLEAR); }
-    disconnect() { if (this.device && this.device.gatt.connected) this.device.gatt.disconnect(); }
+    disconnect() { if (this.device && this.device.gatt.connected) { this.manual = true; this.device.gatt.disconnect(); } }
   }
 
   /** 电池电压（mV）换算成百分比，算法与 EPD-nRF5 固件屏幕上显示的一致 */

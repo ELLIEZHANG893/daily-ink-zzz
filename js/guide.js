@@ -16,7 +16,7 @@
       target: "#btnConnect", title: "打开墨水屏，点「连接」",
       text: () => desktop() ? "墨墨会自动找到 NRF_EPD_ 开头的屏幕，不用你选。" : "在弹出的窗口里，选 NRF_EPD_ 开头的设备。",
     },
-    { target: "#btnSend", title: "最后，发送！", text: "连上之后点这里，卡片就飞到屏幕上啦。屏幕会闪十几秒，那是在刷新，别担心。" },
+    { target: "#btnSend", title: "最后，发送！", text: "点这里，卡片就飞到屏幕上啦。没连接也没关系，墨墨会自动先连上。屏幕会闪十几秒，那是在刷新，别担心。" },
     { target: "#autoBox", desktopOnly: true, title: "想每天自动换？", text: "在这里打开每日自动更新，到点墨墨帮你发；Mac 睡醒后还会补发。" },
     { title: "准备好啦", text: "忘了怎么用的话，点右上角「新手引导」，墨墨随时再带你走一遍。", next: "开始吧" },
   ];

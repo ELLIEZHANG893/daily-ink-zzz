@@ -227,16 +227,16 @@
   // ---------- 设备 ----------
   const ink = new EPD.InkDevice(log);
   function refreshConn() {
-    const on = ink.connected;
+    const on = ink.connected, known = !!ink.device; // known：已经选过这块屏，断开后发送时会自动重连
     $("dot").classList.toggle("on", on);
-    $("connTitle").textContent = on ? ink.device.name : "未连接";
+    $("connTitle").textContent = known ? ink.device.name : "未连接";
     const d = ink.info;
     let sub = desktop ? "点击连接，会自动找到 NRF_EPD_ 开头的屏幕" : "点击连接，在弹窗里选择 NRF_EPD_ 开头的设备";
     if (on) {
       sub = d ? d.name : (ink.driver != null ? `未支持的驱动 0x${ink.driver.toString(16)}` : "已连接");
       if (ink.slotCount) sub += ` · ${ink.slotCount} 个图片槽位`;
       if (ink.battery) sub += ` · 电量 ${EPD.batteryPercent(ink.battery)}%`;
-    } else if (ink.device) sub = "已断开，点击「重新连接」";
+    } else if (known) sub = "待机中 · 发送时会自动连接，不用手动重连";
     $("connSub").textContent = sub;
     // 连上屏幕后，预览自动换成这块屏的尺寸，并锁定尺寸选择
     if (on && d && (canvas.width !== d.w || canvas.height !== d.h)) {
@@ -246,15 +246,15 @@
       log(`已按连接的屏幕切换到 ${d.w}×${d.h}`);
     }
     $("scrModel").disabled = $("scrW").disabled = $("scrH").disabled = on && !!d;
-    $("statDevice").textContent = on ? ink.device.name : "未连接";
-    $("statDeviceSub").textContent = on ? (d ? d.name : "已连接") : (ink.device ? "已断开，可在下方重新连接" : "在下方「设备」里点连接");
+    $("statDevice").textContent = known ? ink.device.name : "未连接";
+    $("statDeviceSub").textContent = on ? (d ? d.name : "已连接") : (known ? "待机中 · 发送时自动连接" : "在下方「设备」里点连接");
     const slots = ink.slotCount ? `${ink.slotCount} 个图片槽位` : "无图片槽位";
-    if (on && ink.battery) {
+    if (known && ink.battery) { // 断开后显示上次读到的电量
       const pct = EPD.batteryPercent(ink.battery);
       $("statBattery").textContent = `${pct}%`;
       $("statBattery").style.color = pct <= 20 ? "var(--warn)" : "";
       $("statBatterySub").textContent = `${(ink.battery / 1000).toFixed(2)} V · ${slots}${pct <= 20 ? " · 电量低，记得换电池" : ""}`;
-    } else if (on) {
+    } else if (on || (known && ink.timeReported)) {
       $("statBattery").textContent = ink.timeReported ? "固件未提供" : "读取中…";
       $("statBattery").style.color = "";
       $("statBatterySub").textContent = ink.timeReported ? `这块屏不通过蓝牙报告电量，可切到屏幕自带日历查看 · ${slots}` : slots;
@@ -262,10 +262,12 @@
       $("statBattery").textContent = "—"; $("statBattery").style.color = "";
       $("statBatterySub").textContent = "连接后显示";
     }
-    $("btnConnect").textContent = on ? "已连接" : ink.device ? "重新连接" : "连接";
+    $("btnConnect").textContent = on ? "已连接" : known ? "现在连接" : "连接";
     $("btnConnect").disabled = on || busy || !navigator.bluetooth;
-    ["btnCalendar", "btnClear", "btnDisconnect", "btnSend", "btnStopSlide"].forEach((id) => ($(id).disabled = !on || busy));
-    $("btnSlide").disabled = !on || busy || photos.length < 2;
+    // 发送、日历、清屏不用先连接：点了会自动连上
+    ["btnCalendar", "btnClear", "btnSend", "btnStopSlide"].forEach((id) => ($(id).disabled = busy || !navigator.bluetooth));
+    $("btnDisconnect").disabled = !on || busy;
+    $("btnSlide").disabled = busy || !navigator.bluetooth || photos.length < 2;
   }
   ink.onchange = refreshConn;
   ink.onprogress = (i, n) => showScan("", `<span class="spin"></span>正在连接 <b>${ink.device ? ink.device.name : "墨水屏"}</b>…${i > 1 ? `（第 ${i}/${n} 次尝试，这块屏常要多试几次）` : ""}`);
@@ -397,20 +399,36 @@
     log(`发送完成，用时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒，屏幕正在刷新`);
   }
 
+  /**
+   * 需要屏幕的操作都走这里：没连接就先自动连上；
+   * 做到一半屏幕断开了（固件约一分钟会主动断开一次），自动重连再做一次。
+   */
+  async function withInk(fn, tries = 2) {
+    for (let i = 1; ; i++) {
+      await ensureConnected();
+      try { return await fn(); }
+      catch (e) {
+        if (i >= tries || ink.connected) throw e; // 不是掉线导致的错误，直接报出来
+        log("操作中连接断开了，自动重连后继续…");
+      }
+    }
+  }
+
   $("btnConnect").onclick = () => guard(ensureConnected);
   $("btnDisconnect").onclick = () => { ink.disconnect(); refreshConn(); };
-  $("btnCalendar").onclick = () => confirm("切换到屏幕自带的日历模式？") && guard(() => ink.calendarMode(), "已切换到日历模式，屏幕稍后刷新");
-  // 月历：一键让屏幕用自带日历每天零点自己翻页（没连接就先连上）
-  $("cAutoScreen").onclick = () => guard(async () => { await ensureConnected(); await ink.calendarMode(); },
-    "已开启：屏幕会用自带日历，每天零点自己翻页，不需要电脑");
-  $("btnClear").onclick = () => confirm("确定清除屏幕内容？") && guard(() => ink.clear(), "已发送清屏指令");
-  $("btnSend").onclick = () => guard(sendCurrent);
+  $("btnCalendar").onclick = () => confirm("切换到屏幕自带的日历模式？") && guard(() => withInk(() => ink.calendarMode()), "已切换到日历模式，屏幕稍后刷新");
+  // 月历：一键让屏幕用自带日历每天零点自己翻页
+  $("cAutoScreen").onclick = () => guard(() => withInk(() => ink.calendarMode()), "已开启：屏幕会用自带日历，每天零点自己翻页，不需要电脑");
+  $("btnClear").onclick = () => confirm("确定清除屏幕内容？") && guard(() => withInk(() => ink.clear()), "已发送清屏指令");
+  // 连上后再画一次：屏幕尺寸可能刚按连接的屏幕切换过
+  $("btnSend").onclick = () => guard(() => withInk(async () => { await drawCard(tab); await sendCurrent(); }));
   $("btnSlide").onclick = () => {
     const min = +$("iInterval").value || 1440;
-    if (!confirm(`把 ${Math.min(photos.length, ink.slotCount || photos.length)} 张图存进屏幕，每 ${min} 分钟换一张？\n这是实验功能，存图过程需要一两分钟，请保持连接。`)) return;
-    guard(() => ink.slideshow(photoFrames(), min, (p) => ($("bar").style.width = p + "%")), "轮播设置完成");
+    if (!confirm(`把 ${Math.min(photos.length, ink.slotCount || photos.length)} 张图存进屏幕，每 ${min} 分钟换一张？\n这是实验功能，存图过程需要一两分钟；中途断开会自动重连接着存。`)) return;
+    ink.slideNext = 0;
+    guard(() => withInk(() => ink.slideshow(photoFrames(), min, (p) => ($("bar").style.width = p + "%"), ink.slideNext), 5), "轮播设置完成");
   };
-  $("btnStopSlide").onclick = () => guard(() => ink.stopSlideshow(), "已停止轮播（间隔调为最长），屏幕保持当前画面");
+  $("btnStopSlide").onclick = () => guard(() => withInk(() => ink.stopSlideshow()), "已停止轮播（间隔调为最长），屏幕保持当前画面");
 
   // ---------- 表单事件 ----------
   document.querySelectorAll(".tab").forEach((b) => (b.onclick = () => setTab(b.dataset.tab)));
@@ -558,7 +576,7 @@
         let ok = false;
         for (let i = 1; i <= 3 && !ok; i++) {
           // 连上后再画一次：屏幕尺寸可能刚按连接的屏幕切换过
-          ok = await guard(async () => { await ensureConnected(); await drawCard(kind, new Date()); await sendCurrent(); });
+          ok = await guard(() => withInk(async () => { await drawCard(kind, new Date()); await sendCurrent(); }));
           if (!ok) { err = "连接或发送失败"; await sleep(10000 * i); }
         }
         if (ok) { err = ""; log("等待屏幕刷新完成…"); await sleep(40000); ink.disconnect(); refreshConn(); }
