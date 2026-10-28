@@ -34,6 +34,17 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --mac --publish never
 
+      - name: 检查安装包内容（说明文件、应用程序快捷方式）
+        run: |
+          for f in dist/*.dmg; do
+            hdiutil attach "$f" -mountpoint /tmp/dmgcheck -nobrowse -quiet
+            ls -la /tmp/dmgcheck
+            test -d "/tmp/dmgcheck/Daily Ink.app"
+            test -f "/tmp/dmgcheck/打不开请看我.txt"
+            test -L "/tmp/dmgcheck/Applications"
+            hdiutil detach /tmp/dmgcheck -quiet
+          done
+
       - name: 上传到 Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
