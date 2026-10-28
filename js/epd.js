@@ -123,7 +123,13 @@
         this.onprogress && this.onprogress(i, TRIES);
         if (i > 1) this.log(`第 ${i} 次尝试连接…`);
         // 屏幕大约每秒广播一次：先等到它的广播再连，比盲连更快、更少超时
-        if (await this._waitAdvert(i === 1 ? 5000 : 10000)) this.log("收到屏幕信号，开始连接…");
+        const heard = await this._waitAdvert(i === 1 ? 5000 : 10000);
+        if (heard) this.log("收到屏幕信号，开始连接…");
+        else if (heard === false && i > 1) {
+          // 能收广播、却一直听不到它：屏幕多半已经休眠（有唤醒键的屏，断开约 2 分钟后会休眠），再试也连不上
+          const e = new Error("一直收不到屏幕的信号，屏幕可能已经休眠了");
+          e.name = "Asleep"; throw e;
+        }
         try {
           server = await Promise.race([
             this.device.gatt.connect(),
@@ -154,11 +160,11 @@
 
     /**
      * 等屏幕发出广播（浏览器支持 watchAdvertisements 时），最多等 ms 毫秒。
-     * 返回是否等到了；不支持时立刻返回 false，照常直接连接。
+     * 返回 true = 等到了，false = 没等到，null = 浏览器不支持（照常直接连接）。
      */
     async _waitAdvert(ms) {
       const dev = this.device;
-      if (!dev.watchAdvertisements) return false;
+      if (!dev.watchAdvertisements) return null;
       const ac = new AbortController();
       try {
         return await new Promise((resolve) => {
@@ -166,7 +172,7 @@
           const onAdv = () => done(true);
           const t = setTimeout(() => done(false), ms);
           dev.addEventListener("advertisementreceived", onAdv);
-          dev.watchAdvertisements({ signal: ac.signal }).catch(() => done(false));
+          dev.watchAdvertisements({ signal: ac.signal }).catch(() => done(null));
         });
       } finally { ac.abort(); }
     }
@@ -291,6 +297,8 @@
     }
     async clear() { await this.write(CMD.CLEAR); }
     disconnect() { if (this.device && this.device.gatt.connected) { this.manual = true; this.device.gatt.disconnect(); } }
+    /** 忘掉这块屏，下次连接时重新选择 */
+    forget() { this.disconnect(); this.device = null; this.char = null; }
   }
 
   /** 电池电压（mV）换算成百分比，算法与 EPD-nRF5 固件屏幕上显示的一致 */

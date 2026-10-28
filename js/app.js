@@ -286,7 +286,7 @@
       else {
         log("出错：" + (e && e.message || e));
         $("logBox").open = true;
-        if (!autoRunning) showScan("bad", `<b>出错了</b><div>${String(e && e.message || e).replace(/</g, "&lt;")}</div><div class="hint">详细信息见右侧「运行日志」</div>`);
+        if (!autoRunning && !(e && e.shown)) showScan("bad", `<b>出错了</b><div>${String(e && e.message || e).replace(/</g, "&lt;")}</div><div class="hint">详细信息见右侧「运行日志」</div>`);
       }
       return false;
     } finally { busy = false; refreshConn(); }
@@ -294,7 +294,18 @@
 
   async function ensureConnected() {
     if (ink.connected) return;
-    if (ink.device) { try { await ink.reconnect(); hideScan(); return; } catch (e) { log("重连失败，重新搜索设备…"); } }
+    if (ink.device) {
+      try { await ink.reconnect(); hideScan(); return; }
+      catch (e) {
+        // 不能在这里直接弹设备选择框：浏览器只允许「刚点完按钮」时弹，重连已经等了很久
+        log(`没连上 ${ink.device.name}：${e.message || e}`);
+        showScan("bad", `<b>没连上 ${esc(ink.device.name)}</b>${SLEEP_HINT}
+          <div class="row"><button type="button" class="btn primary" id="btnRetry">再试一次</button><button type="button" class="btn ghost" id="btnPickAgain">重新选择屏幕</button></div>`);
+        $("btnRetry").onclick = () => guard(ensureConnected);
+        $("btnPickAgain").onclick = () => { ink.forget(); hideScan(); refreshConn(); guard(ensureConnected); };
+        e.shown = true; throw e;
+      }
+    }
     // 先确认蓝牙可用：Mac 蓝牙关着，或者 App 没有蓝牙权限时，这里会是 false
     let available = true;
     try { available = await Promise.race([navigator.bluetooth.getAvailability(), sleep(1500).then(() => true)]); } catch (e) {}
@@ -316,6 +327,11 @@
   // ---------- 扫描提示 ----------
   function showScan(kind, html) { const b = $("scanBox"); b.className = "scan show " + (kind || ""); b.innerHTML = html; }
   function hideScan() { $("scanBox").className = "scan"; }
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const SLEEP_HINT = `<ol>
+    <li>屏幕断开约 2 分钟后可能会<b>休眠省电</b>，这时电脑找不到它。请按一下屏幕上的唤醒键（有的型号是磁铁感应），唤醒后马上点「再试一次」。</li>
+    <li>确认屏幕没有被手机或其他电脑连着（同一时间只能连一台）。</li>
+    <li>让屏幕离电脑近一点。</li></ol>`;
   const NO_PERMISSION = `<b>没有扫描到任何蓝牙设备</b>
     <div>多半是 Daily Ink 还没有蓝牙权限：</div>
     <ol><li>打开「系统设置 → 隐私与安全性 → 蓝牙」</li><li>找到 <b>Daily Ink</b> 并打开开关（列表里没有就点「+」添加「应用程序」里的 Daily Ink）</li><li>完全退出 Daily Ink（菜单栏小黑猫 → 退出），再重新打开</li></ol>
