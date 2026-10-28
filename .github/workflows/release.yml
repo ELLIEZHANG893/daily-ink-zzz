@@ -39,6 +39,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.dmg
+          body_path: build/release-notes.md
+          append_body: true
 
       - name: 上传安装包（手动运行时在本次运行页面下载）
         if: github.event_name != 'release'

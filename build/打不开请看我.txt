@@ -1,0 +1,29 @@
+Daily Ink · 打不开请看我
+================================
+
+如果打开时提示「Apple 无法验证 Daily Ink」或「已损坏，无法打开」：
+先点「完成」，不要点「移到废纸篓」。
+
+这是因为 Daily Ink 是个人开源作品，暂时没有苹果开发者签名。按下面做一次就好：
+
+第 1 步：把这个窗口里的 Daily Ink 图标，拖到旁边的「Applications（应用程序）」文件夹。
+
+第 2 步：打开「终端」：按 ⌘ + 空格，输入「终端」，回车。
+
+第 3 步：复制下面这一整行，粘贴到终端里，按回车：
+
+xattr -cr "/Applications/Daily Ink.app" && open "/Applications/Daily Ink.app"
+
+Daily Ink 会自动打开，以后双击就能直接用。
+每次更新到新版本，需要再运行一次这行命令。
+
+——————————————
+不想用终端？
+打开「系统设置 → 隐私与安全性」，滚到最下面，
+在「已阻止打开 Daily Ink」旁边点「仍要打开」，输入电脑密码即可。
+
+这行命令只是去掉 macOS 给「从网上下载的文件」加的隔离标记，
+不会改动任何系统设置。全部代码公开在：
+https://github.com/ELLIEZHANG893/daily-ink-zzz
+
+Made with ♡ by zzz · Ellie Zhang

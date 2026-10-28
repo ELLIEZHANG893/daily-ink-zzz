@@ -1,7 +1,7 @@
 {
   "name": "daily-ink",
   "productName": "Daily Ink",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "让 4.2 寸蓝牙墨水屏每天换一张卡片 · by zzz (Ellie Zhang)",
   "main": "desktop/main.js",
   "author": "zzz (Ellie Zhang)",
@@ -43,7 +43,13 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "extendInfo": {
         "NSBluetoothAlwaysUsageDescription": "Daily Ink 需要使用蓝牙连接你的墨水屏，把卡片发送过去。",
@@ -53,7 +59,29 @@
     },
     "dmg": {
       "title": "Daily Ink ${version}",
-      "artifactName": "DailyInk-${version}-${arch}.${ext}"
+      "artifactName": "DailyInk-${version}-${arch}.${ext}",
+      "window": {
+        "width": 540,
+        "height": 420
+      },
+      "contents": [
+        {
+          "x": 140,
+          "y": 170
+        },
+        {
+          "x": 400,
+          "y": 170,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 270,
+          "y": 310,
+          "type": "file",
+          "path": "build/打不开请看我.txt"
+        }
+      ]
     },
     "publish": {
       "provider": "github",
