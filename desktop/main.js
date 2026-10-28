@@ -153,15 +153,36 @@ function readNote(name) {
   });
 }
 
-// ---------- AI 专属签文（用户自己的 Claude API key） ----------
+// ---------- AI 专属签文（用户自己的 API key，可选多家模型） ----------
 // key 用系统钥匙串加密后存在本机 settings.json，只在主进程里解密使用，不会传给页面。
-const AI_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+// 除 Claude 外，其余服务商都走「OpenAI 兼容接口」：同一种请求格式，只是地址、key、模型名不同。
+// 各家模型名变化很快，这里只放常见默认值；页面上可以「获取模型列表」或直接手填。
+const AI_PROVIDERS = {
+  deepseek: { name: "DeepSeek", base: "https://api.deepseek.com", models: ["deepseek-flash", "deepseek-v4-pro"], json: true, site: "https://platform.deepseek.com" },
+  kimi: { name: "Kimi（月之暗面）", base: "https://api.moonshot.cn/v1", models: ["kimi-k3.1-pro", "kimi-k2.6"], site: "https://platform.kimi.com" },
+  qwen: { name: "通义千问（阿里云百炼）", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", models: ["qwen-plus", "qwen3.8-max"], site: "https://bailian.console.aliyun.com" },
+  openai: { name: "OpenAI", base: "https://api.openai.com/v1", models: ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-luna"], json: true, site: "https://platform.openai.com" },
+  claude: { name: "Claude（Anthropic）", base: "", models: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], site: "https://platform.claude.com" },
+  custom: { name: "其他（OpenAI 兼容接口）", base: "", models: [], site: "" },
+};
+// 这些 Claude 模型支持「被安全策略误拒时自动换模型重试」
+const CLAUDE_FALLBACK_OK = ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"];
+
+function aiSettings() { return readSettings().ai || {}; }
 function aiConfig() {
-  const s = readSettings().ai || {};
-  return { enabled: !!s.enabled, model: AI_MODELS.includes(s.model) ? s.model : AI_MODELS[0], hasKey: !!s.key };
+  const s = aiSettings();
+  const provider = AI_PROVIDERS[s.provider] ? s.provider : "deepseek";
+  const p = AI_PROVIDERS[provider];
+  return {
+    enabled: !!s.enabled, provider,
+    model: (s.models || {})[provider] || p.models[0] || "",
+    base: provider === "custom" ? s.customBase || "" : p.base,
+    hasKey: !!(s.keys || {})[provider],
+    providers: Object.entries(AI_PROVIDERS).map(([id, v]) => ({ id, name: v.name, base: v.base, models: v.models, site: v.site })),
+  };
 }
-function aiKey() {
-  const enc = (readSettings().ai || {}).key;
+function aiKey(provider) {
+  const enc = (aiSettings().keys || {})[provider];
   if (!enc) return "";
   try { return safeStorage.decryptString(Buffer.from(enc, "base64")); } catch (e) { return ""; }
 }
@@ -175,6 +196,8 @@ const AI_PROMPT = `你是「Daily Ink 每日一墨」的运势签文案作者，
 - yi：宜做的 3 件事，每件 2-4 个字
 - ji：忌做的 2 件事，每件 2-4 个字
 - line：一句签语，10-18 个字，最多一个逗号，结尾用句号`;
+// OpenAI 兼容接口没有统一的结构化输出，用提示词约定 JSON 格式（DeepSeek 要求提示词里出现 json）
+const JSON_HINT = `\n\n只输出一个 json 对象，不要任何其他文字，格式：{"theme":"…","yi":["…","…","…"],"ji":["…","…"],"line":"…"}`;
 
 const AI_SCHEMA = {
   type: "object",
@@ -188,10 +211,25 @@ const AI_SCHEMA = {
   additionalProperties: false,
 };
 
-async function aiFortune(info) {
-  const key = aiKey();
-  if (!key) throw new Error("还没有填写 API key");
-  const { model } = aiConfig();
+/** 检查 AI 写的内容放不放得进卡片，放不下就不用 */
+function checkFortune(out, model) {
+  const len = (s) => [...String(s || "").trim()].length;
+  const yi = (out.yi || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 3);
+  const ji = (out.ji || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 2);
+  const ok = len(out.theme) >= 2 && len(out.theme) <= 6 && yi.length === 3 && ji.length === 2
+    && yi.every((s) => len(s) <= 5) && ji.every((s) => len(s) <= 5) && len(out.line) >= 4 && len(out.line) <= 22;
+  if (!ok) throw new Error("AI 写的字数超出了卡片，先用内置签文");
+  return { theme: String(out.theme).trim(), yi, ji, line: String(out.line).trim(), model };
+}
+
+/** 从回复里取出 JSON：有的模型会包一层 ```json 代码块，或先输出 <think> 思考过程 */
+function parseJSON(text) {
+  const m = String(text || "").replace(/<think>[\s\S]*?<\/think>/g, "").match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("AI 没有按格式返回，先用内置签文");
+  try { return JSON.parse(m[0]); } catch (e) { throw new Error("AI 没有按格式返回，先用内置签文"); }
+}
+
+async function claudeFortune(key, model, info) {
   const Anthropic = require("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: key, timeout: 90 * 1000 });
   const body = {
@@ -202,44 +240,110 @@ async function aiFortune(info) {
   };
   let res;
   try {
-    // Opus / Sonnet 偶尔会被安全策略误拒，开启「被拒时自动换模型重试」；Haiku 不支持这个参数
-    res = model === "claude-haiku-5-5"
-      ? await client.messages.create(body)
-      : await client.beta.messages.create({ ...body, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" });
+    // Opus / Sonnet 偶尔会被安全策略误拒，开启「被拒时自动换模型重试」；其他模型不支持这个参数
+    res = CLAUDE_FALLBACK_OK.includes(model)
+      ? await client.beta.messages.create({ ...body, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" })
+      : await client.messages.create(body);
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) throw new Error("API key 无效，请检查是否填对");
     if (e instanceof Anthropic.PermissionDeniedError) throw new Error("这个 key 没有使用该模型的权限");
+    if (e instanceof Anthropic.NotFoundError) throw new Error(`找不到模型「${model}」，请检查模型名`);
     if (e instanceof Anthropic.RateLimitError) throw new Error("请求太频繁或额度不足，稍后再试");
-    if (e instanceof Anthropic.APIConnectionError) throw new Error("连不上 Anthropic，请检查网络");
+    if (e instanceof Anthropic.APIConnectionError) throw new Error("连不上 Anthropic，请检查网络（中国大陆通常需要代理）");
     if (e instanceof Anthropic.APIError) throw new Error(`Claude 接口出错（${e.status || "?"}）：${e.message}`);
     throw e;
   }
   if (res.stop_reason === "refusal") throw new Error("模型这次没有生成，先用内置签文");
   if (res.stop_reason === "max_tokens") throw new Error("生成被截断了，先用内置签文");
-  const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  const out = JSON.parse(text);
-  // 再检查一遍长度，超出卡片排版就不用
-  const len = (s) => [...String(s || "").trim()].length;
-  const yi = (out.yi || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 3);
-  const ji = (out.ji || []).map((s) => String(s).trim()).filter(Boolean).slice(0, 2);
-  const ok = len(out.theme) >= 2 && len(out.theme) <= 6 && yi.length === 3 && ji.length === 2
-    && yi.every((s) => len(s) <= 5) && ji.every((s) => len(s) <= 5) && len(out.line) >= 4 && len(out.line) <= 22;
-  if (!ok) throw new Error("AI 写的字数超出了卡片，先用内置签文");
-  return { theme: out.theme.trim(), yi, ji, line: out.line.trim(), model: res.model };
+  return checkFortune(parseJSON(res.content.filter((b) => b.type === "text").map((b) => b.text).join("")), res.model);
+}
+
+/** 把 OpenAI 兼容接口的错误翻译成看得懂的话 */
+async function compatError(res, name, model) {
+  let detail = "";
+  try { const j = await res.json(); detail = (j.error && (j.error.message || j.error.code)) || j.message || ""; } catch (e) {}
+  if (res.status === 401 || res.status === 403) return new Error("API key 无效或没有权限，请检查是否填对");
+  if (res.status === 402) return new Error("账户余额不足，请先到服务商那里充值");
+  if (res.status === 404) return new Error(`找不到模型「${model}」或接口地址不对`);
+  if (res.status === 429) return new Error("请求太频繁或额度不足，稍后再试");
+  return new Error(`${name} 接口出错（${res.status}）${detail ? "：" + detail : ""}`);
+}
+
+async function compatFortune(cfg, key, info) {
+  const p = AI_PROVIDERS[cfg.provider];
+  if (!cfg.base) throw new Error("请先填写接口地址");
+  if (!cfg.model) throw new Error("请先填写模型名");
+  let res;
+  try {
+    res = await fetch(cfg.base.replace(/\/+$/, "") + "/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [{ role: "system", content: AI_PROMPT + JSON_HINT }, { role: "user", content: JSON.stringify(info) }],
+        ...(p.json ? { response_format: { type: "json_object" } } : {}),
+      }),
+      signal: AbortSignal.timeout(90 * 1000),
+    });
+  } catch (e) {
+    throw new Error(e.name === "TimeoutError" ? "等了 90 秒还没回复，稍后再试" : `连不上 ${p.name}，请检查网络和接口地址`);
+  }
+  if (!res.ok) throw await compatError(res, p.name, cfg.model);
+  const data = await res.json();
+  const choice = (data.choices || [])[0] || {};
+  if (choice.finish_reason === "length") throw new Error("生成被截断了，先用内置签文");
+  const text = choice.message && choice.message.content;
+  if (!text) throw new Error("AI 这次没有返回内容，先用内置签文");
+  return checkFortune(parseJSON(text), data.model || cfg.model);
+}
+
+async function aiFortune(info) {
+  const cfg = aiConfig();
+  const key = aiKey(cfg.provider);
+  if (!key) throw new Error("还没有填写 API key");
+  return cfg.provider === "claude" ? claudeFortune(key, cfg.model, info) : compatFortune(cfg, key, info);
+}
+
+/** 列出这个 key 能用的模型，方便用户直接选，不用记模型名 */
+async function aiModels() {
+  const cfg = aiConfig();
+  const key = aiKey(cfg.provider);
+  if (!key) throw new Error("请先填写并保存 API key");
+  if (cfg.provider === "claude") {
+    const Anthropic = require("@anthropic-ai/sdk");
+    const client = new Anthropic({ apiKey: key, timeout: 30 * 1000 });
+    const ids = [];
+    try { for await (const m of client.models.list()) ids.push(m.id); }
+    catch (e) { throw new Error(e instanceof Anthropic.AuthenticationError ? "API key 无效，请检查是否填对" : "获取失败：" + e.message); }
+    return ids;
+  }
+  if (!cfg.base) throw new Error("请先填写接口地址");
+  let res;
+  try { res = await fetch(cfg.base.replace(/\/+$/, "") + "/models", { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(30 * 1000) }); }
+  catch (e) { throw new Error(`连不上 ${AI_PROVIDERS[cfg.provider].name}，请检查网络和接口地址`); }
+  if (!res.ok) throw await compatError(res, AI_PROVIDERS[cfg.provider].name, "");
+  const data = await res.json();
+  // 去掉向量、语音、画图这类不能写文字的模型
+  return (data.data || []).map((m) => m.id).filter((id) => id && !/embed|tts|whisper|dall|image|audio|moderation|realtime|transcribe|rerank/i.test(id)).sort();
 }
 
 ipcMain.handle("ai:get", () => aiConfig());
 ipcMain.handle("ai:set", (_e, s) => {
-  const ai = { ...(readSettings().ai || {}), enabled: !!s.enabled, model: AI_MODELS.includes(s.model) ? s.model : AI_MODELS[0] };
+  const ai = { ...aiSettings() };
+  const provider = AI_PROVIDERS[s.provider] ? s.provider : "deepseek";
+  ai.enabled = !!s.enabled; ai.provider = provider;
+  if (typeof s.model === "string") ai.models = { ...(ai.models || {}), [provider]: s.model.trim() };
+  if (provider === "custom" && typeof s.base === "string") ai.customBase = s.base.trim();
   if (typeof s.key === "string" && s.key.trim()) {
     if (!safeStorage.isEncryptionAvailable()) throw new Error("这台 Mac 暂时无法加密保存 key");
-    ai.key = safeStorage.encryptString(s.key.trim()).toString("base64");
+    ai.keys = { ...(ai.keys || {}), [provider]: safeStorage.encryptString(s.key.trim()).toString("base64") };
   }
-  if (s.clearKey) ai.key = "";
+  if (s.clearKey) ai.keys = { ...(ai.keys || {}), [provider]: "" };
   writeSettings({ ai });
   return aiConfig();
 });
 ipcMain.handle("ai:fortune", (_e, info) => aiFortune(info));
+ipcMain.handle("ai:models", () => aiModels());
 
 // ---------- 与页面通信 ----------
 ipcMain.handle("schedule:set", (_e, s) => {

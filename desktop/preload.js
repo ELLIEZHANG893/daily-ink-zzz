@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld("dailyInkDesktop", {
   getAI: () => ipcRenderer.invoke("ai:get"),
   setAI: (s) => ipcRenderer.invoke("ai:set", s),
   aiFortune: (info) => ipcRenderer.invoke("ai:fortune", info),
+  aiModels: () => ipcRenderer.invoke("ai:models"),
 });

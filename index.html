@@ -96,7 +96,7 @@
   .form { display: none; }
   .form.active { display: grid; gap: 12px; }
   label { display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); font-weight: 500; }
-  input[type=text], input[type=date], input[type=time], input[type=number], textarea, select {
+  input[type=text], input[type=password], input[type=date], input[type=time], input[type=number], textarea, select {
     font-size: 14px; color: var(--ink); background: var(--soft); width: 100%;
     border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; transition: border-color .15s, background .15s;
   }
@@ -118,6 +118,14 @@
   .hint { font-size: 12.5px; color: var(--muted); margin: 0; }
   .natal { font-size: 13px; color: var(--ink); background: var(--soft); border-radius: 10px; padding: 9px 12px; margin: 0; }
   .divider { border-top: 1px solid var(--line); margin: 4px 0; }
+  .auto-pick { display: grid; gap: 8px; }
+  .auto-pick > b { color: var(--ink); font-size: 13.5px; }
+  .auto-opt { display: flex; align-items: center; gap: 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .auto-opt > div { flex: 1; min-width: 0; }
+  .auto-opt b { display: block; color: var(--ink); font-size: 13.5px; }
+  .auto-opt small { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 2px; }
+  a.btn { text-decoration: none; }
+  body.desktop .auto-opt .btn.desktop-only { display: inline-flex !important; }
   .badge { font-size: 11px; font-weight: 600; background: var(--accent-soft); color: var(--accent-ink); padding: 2px 8px; border-radius: 99px; }
 
   .thumbs { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -311,21 +319,21 @@
               <div class="divider"></div>
               <div class="row" style="margin:12px 0 10px"><b style="color:var(--ink)">AI 专属签文</b><span class="badge">可选</span></div>
               <div style="display:grid;gap:12px">
-                <label class="check"><input type="checkbox" id="aiEnable">用我自己的 Claude API key，每天写一张专属签文</label>
+                <label class="check"><input type="checkbox" id="aiEnable">用我自己的 AI 服务，每天写一张专属签文</label>
                 <div class="two">
-                  <label>API key<input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label>
-                  <label>模型<select id="aiModel">
-                    <option value="claude-opus-5-5">Claude Opus 5.5（文笔最好）</option>
-                    <option value="claude-sonnet-5-5">Claude Sonnet 5.5（均衡）</option>
-                    <option value="claude-haiku-5-5">Claude Haiku 5.5（最省钱）</option>
-                  </select></label>
+                  <label>服务商<select id="aiProvider"></select></label>
+                  <label>模型（可从列表选，也可以直接填）<input type="text" id="aiModel" list="aiModelList" autocomplete="off" spellcheck="false"><datalist id="aiModelList"></datalist></label>
                 </div>
+                <label id="aiBaseBox">接口地址（OpenAI 兼容，一般以 /v1 结尾）<input type="text" id="aiBase" placeholder="https://…/v1" autocomplete="off" spellcheck="false"></label>
+                <label>API key<input type="password" id="aiKey" placeholder="粘贴你的 API key" autocomplete="off" spellcheck="false"></label>
+                <p class="hint" id="aiSite"></p>
                 <div class="row">
                   <button id="aiSave" type="button" class="btn">保存设置</button>
+                  <button id="aiList" type="button" class="btn">获取模型列表</button>
                   <button id="aiGen" type="button" class="btn">用 AI 写这一天的签</button>
                   <button id="aiForget" type="button" class="btn ghost">删除 key</button>
                 </div>
-                <p class="hint" id="aiStatus">key 加密保存在这台 Mac 上。开启后只会把日主、喜用五行和当天干支发给 Anthropic，不含生日和称呼；费用从你的 Anthropic 账户扣，每天最多调用一次。生成失败时自动用内置签文。</p>
+                <p class="hint" id="aiStatus">key 加密保存在这台 Mac 上。开启后只会把日主、喜用五行和当天干支发给你选的服务商，不含生日和称呼；费用从你自己的账户扣，每天最多调用一次。生成失败时自动用内置签文。</p>
               </div>
             </div>
           </div>
@@ -344,7 +352,19 @@
               <label>日期<input type="date" id="cDay"></label>
               <label>每周从哪天开始<select id="cWeekStart"><option value="1">周一</option><option value="0">周日</option></select></label>
             </div>
-            <p class="hint">也可以在下方「设备」里点「屏幕自带日历」，让屏幕自己显示日历并每天翻页。</p>
+            <p class="hint">日期默认就是今天，过了零点会自动换成新的一天。</p>
+            <div class="auto-pick">
+              <b>让月历每天自己更新</b>
+              <div class="auto-opt">
+                <div><b>屏幕自己翻页</b><small>不用开电脑。屏幕用自带的日历样式，每天零点自己翻到新的一天。</small></div>
+                <button id="cAutoScreen" type="button" class="btn primary">一键开启</button>
+              </div>
+              <div class="auto-opt">
+                <div><b>保持右边这个样式，每天自动发送</b><small class="desktop-only">需要这台 Mac 开着 Daily Ink。每天零点后自动发送，Mac 睡着的话，醒来马上补发。</small><small class="web-only">需要 Mac 桌面版：每天零点后自动发送，Mac 睡着的话醒来马上补发。</small></div>
+                <button id="cAutoDesktop" type="button" class="btn desktop-only">每天自动发</button>
+                <a class="btn web-only" href="https://github.com/ELLIEZHANG893/daily-ink-zzz/releases/latest" target="_blank" rel="noopener">下载桌面版</a>
+              </div>
+            </div>
           </div>
 
           <div class="form" data-form="todo">

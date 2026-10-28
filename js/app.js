@@ -345,6 +345,9 @@
   $("btnConnect").onclick = () => guard(ensureConnected);
   $("btnDisconnect").onclick = () => { ink.disconnect(); refreshConn(); };
   $("btnCalendar").onclick = () => confirm("切换到屏幕自带的日历模式？") && guard(() => ink.calendarMode(), "已切换到日历模式，屏幕稍后刷新");
+  // 月历：一键让屏幕用自带日历每天零点自己翻页（没连接就先连上）
+  $("cAutoScreen").onclick = () => guard(async () => { await ensureConnected(); await ink.calendarMode(); },
+    "已开启：屏幕会用自带日历，每天零点自己翻页，不需要电脑");
   $("btnClear").onclick = () => confirm("确定清除屏幕内容？") && guard(() => ink.clear(), "已发送清屏指令");
   $("btnSend").onclick = () => guard(sendCurrent);
   $("btnSlide").onclick = () => {
@@ -392,25 +395,62 @@
     };
     ["aEnable", "aTime", "aCard", "aLogin"].forEach((id) => $(id).addEventListener("change", pushSchedule));
 
+    // 月历：一键开启「每天零点后自动发送月历」，睡眠中错过的醒来补发
+    $("cAutoDesktop").onclick = () => {
+      $("aCard").value = "calendar"; $("aTime").value = "00:05"; $("aEnable").checked = true;
+      pushSchedule();
+      log("已开启：每天 00:05 自动发送月历");
+      $("autoBox").scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+
     // AI 专属签文的设置
     const aiMsg = (e) => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, "");
+    const setOptions = (list, ids) => { list.innerHTML = ""; ids.forEach((id) => list.appendChild(Object.assign(document.createElement("option"), { value: id }))); };
     function showAI(cfg, note) {
       aiEnabled = cfg.enabled && cfg.hasKey;
-      $("aiEnable").checked = cfg.enabled; $("aiModel").value = cfg.model;
-      $("aiKey").value = ""; $("aiKey").placeholder = cfg.hasKey ? "已保存（重新填写可替换）" : "sk-ant-…";
+      const p = cfg.providers.find((x) => x.id === cfg.provider);
+      if (!$("aiProvider").options.length) {
+        cfg.providers.forEach((x) => $("aiProvider").appendChild(Object.assign(document.createElement("option"), { value: x.id, textContent: x.name })));
+      }
+      $("aiProvider").value = cfg.provider;
+      $("aiEnable").checked = cfg.enabled;
+      $("aiModel").value = cfg.model;
+      setOptions($("aiModelList"), p.models);
+      $("aiBase").value = cfg.base;
+      $("aiBaseBox").style.display = cfg.provider === "custom" ? "" : "none";
+      $("aiSite").textContent = cfg.provider === "custom" ? "填写服务商提供的 OpenAI 兼容接口地址和模型名。"
+        : `接口地址：${p.base || "官方 SDK"}。还没有 key？到 ${p.site.replace("https://", "")} 注册后在控制台创建。`;
+      $("aiKey").value = ""; $("aiKey").placeholder = cfg.hasKey ? "已保存（重新填写可替换）" : "粘贴你的 API key";
       $("aiForget").disabled = !cfg.hasKey;
       if (note) $("aiStatus").textContent = note;
     }
+    const saveAI = (extra) => desktop.setAI({
+      enabled: $("aiEnable").checked, provider: $("aiProvider").value, model: $("aiModel").value, base: $("aiBase").value, key: $("aiKey").value, ...extra,
+    });
     desktop.getAI().then((cfg) => { showAI(cfg); render(); });
+    // 切换服务商：显示这家之前保存过的模型和 key 状态
+    $("aiProvider").onchange = async () => {
+      showAI(await desktop.setAI({ enabled: $("aiEnable").checked, provider: $("aiProvider").value }), " ");
+    };
     $("aiSave").onclick = async () => {
       try {
-        const cfg = await desktop.setAI({ enabled: $("aiEnable").checked, model: $("aiModel").value, key: $("aiKey").value });
+        const cfg = await saveAI();
         showAI(cfg, !cfg.enabled ? "已保存，目前使用内置签文。" : cfg.hasKey ? "已保存。点「用 AI 写这一天的签」试试看。" : "已保存。还需要填写 API key 才能使用。");
         render();
       } catch (e) { $("aiStatus").textContent = "保存失败：" + aiMsg(e); }
     };
+    $("aiList").onclick = async () => {
+      $("aiList").disabled = true;
+      try {
+        showAI(await saveAI());
+        const ids = await desktop.aiModels();
+        setOptions($("aiModelList"), ids);
+        $("aiStatus").textContent = ids.length ? `找到 ${ids.length} 个模型，点「模型」输入框就能选。` : "没有找到可用的模型，可以直接手填模型名。";
+      } catch (e) { $("aiStatus").textContent = "获取模型列表失败：" + aiMsg(e); }
+      $("aiList").disabled = false;
+    };
     $("aiForget").onclick = async () => {
-      showAI(await desktop.setAI({ enabled: false, model: $("aiModel").value, clearKey: true }), "key 已从这台 Mac 删除。");
+      showAI(await saveAI({ enabled: false, key: "", clearKey: true }), "key 已从这台 Mac 删除。");
       render();
     };
     $("aiGen").onclick = async () => {
@@ -486,6 +526,15 @@
   // ---------- 启动 ----------
   if (!navigator.bluetooth) $("unsupported").style.display = "block";
   ["fDay", "dDay", "cDay"].forEach((id) => ($(id).value = todayStr()));
+  // 日期框默认跟着「今天」走：过了零点自动换成新的一天（自己选了别的日期就不动）
+  let today = todayStr();
+  setInterval(() => {
+    const now = todayStr();
+    if (now === today) return;
+    ["fDay", "dDay", "cDay"].forEach((id) => { if ($(id).value === today) $(id).value = now; });
+    today = now;
+    render();
+  }, 60 * 1000);
   load();
   syncFortuneMode();
   setTab(tab, true);

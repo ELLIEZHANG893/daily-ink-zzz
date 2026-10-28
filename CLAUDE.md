@@ -23,8 +23,10 @@
 | `.github/workflows/release.yml` | 发布 Release 时在 macOS runner 打包 arm64/x64 .dmg 并上传；手动运行则上传为 Actions 产物 |
 
 ## AI 专属签文（仅桌面版，可选）
-- 用户在运势签设置里填自己的 Claude API key；key 用 Electron `safeStorage`（系统钥匙串）加密存在 `settings.json`，只在主进程解密，不传给页面。
-- 主进程 `aiFortune()` 用 `@anthropic-ai/sdk` 调用，结构化输出 JSON（theme / yi / ji / line），再检查字数，超出排版就退回内置签文。
+- 用户在运势签设置里选服务商并填自己的 API key：DeepSeek、Kimi、通义千问、OpenAI、Claude，或「其他（OpenAI 兼容接口）」自填地址。预设列表在 `desktop/main.js` 的 `AI_PROVIDERS`。
+- key 按服务商分别用 Electron `safeStorage`（系统钥匙串）加密存在 `settings.json`，只在主进程解密，不传给页面。
+- Claude 用 `@anthropic-ai/sdk` + 结构化输出；其余走 OpenAI 兼容的 `/chat/completions`（Node 自带 fetch），提示词约定 JSON，DeepSeek/OpenAI 另加 `response_format: json_object`。返回后统一检查字数，超出排版就退回内置签文。
+- 模型名变化快：页面有「获取模型列表」（调用 `/models`），模型框也可以手填。
 - 只发送日主、强弱、喜用五行和当天干支/十神/星级，不发送生日和称呼。同一天同一八字只生成一次（页面 localStorage `daily-ink-ai` 缓存）。
 - 如果 npm 默认用的是私有镜像，装依赖时加 `--registry=https://registry.npmjs.org`，避免 package-lock 里出现私有镜像地址。
 
